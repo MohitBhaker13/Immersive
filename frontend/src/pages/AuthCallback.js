@@ -25,7 +25,12 @@ const AuthCallback = () => {
 
         // Exchange session_id for user data
         const response = await api.post('/auth/session', { session_id: sessionId });
-        const user = response.data;
+        const { user, session_token } = response.data;
+
+        // Store token for mobile fallback
+        if (session_token) {
+          localStorage.setItem('session_token', session_token);
+        }
 
         // Check if onboarding is needed
         if (!user.reading_type) {

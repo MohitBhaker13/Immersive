@@ -261,7 +261,10 @@ async def google_login(request: Request, response: Response):
         # Get user data
         user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
         
-        return user_doc
+        return {
+            "user": user_doc,
+            "session_token": session_token
+        }
         
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))

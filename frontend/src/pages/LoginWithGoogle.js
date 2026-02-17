@@ -18,7 +18,12 @@ const LoginWithGoogle = () => {
         credential: response.credential,
       });
 
-      const user = result.data;
+      const { user, session_token } = result.data;
+
+      // Store token for mobile fallback
+      if (session_token) {
+        localStorage.setItem('session_token', session_token);
+      }
 
       // Check if onboarding is needed
       if (!user.reading_type) {
