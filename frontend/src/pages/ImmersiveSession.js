@@ -22,6 +22,13 @@ const ImmersiveSession = () => {
   const [noteContent, setNoteContent] = useState('');
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const timerRef = useRef(null);
+  const sessionRef = useRef(null);
+  const hasLoaded = useRef(false);
+
+  // Keep ref in sync for handlers to use without changing identity
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
 
   const formatTime = useCallback((seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -30,12 +37,15 @@ const ImmersiveSession = () => {
   }, []);
 
   const handleComplete = useCallback(async () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    await audioManager.stop(1000); // Fade out over 1 second
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    await audioManager.stop(1000);
 
     try {
       await api.post(`/sessions/${sessionId}/complete`, {
-        actual_minutes: session?.duration_minutes,
+        actual_minutes: sessionRef.current?.duration_minutes,
       });
       toast.success('Session completed!');
       navigate('/dashboard');
@@ -43,23 +53,36 @@ const ImmersiveSession = () => {
       console.error('Failed to complete session:', error);
       toast.error('Failed to complete session');
     }
-  }, [sessionId, session?.duration_minutes, navigate]);
+  }, [sessionId, navigate]);
 
-  const startTimer = useCallback(() => {
-    timerRef.current = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          handleComplete();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, [handleComplete]);
+  // Separate effect for the actual timer ticker
+  useEffect(() => {
+    if (!session || timeRemaining <= 0) return;
+
+    if (!timerRef.current) {
+      timerRef.current = setInterval(() => {
+        setTimeRemaining((prev) => {
+          if (prev <= 1) {
+            handleComplete();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      // We don't clear here to allow it to persist through small re-renders,
+      // only if the component unmounts or explicitly stopped.
+    };
+  }, [session, timeRemaining <= 0, handleComplete]);
 
   const loadSession = useCallback(async () => {
+    if (hasLoaded.current) return;
+    hasLoaded.current = true;
+
     try {
-      const [sessionRes, sessionsRes] = await Promise.all([
+      const [sessionRes, booksRes] = await Promise.all([
         api.get('/sessions'),
         api.get('/books'),
       ]);
@@ -74,10 +97,9 @@ const ImmersiveSession = () => {
       setSession(currentSession);
       setTimeRemaining(currentSession.duration_minutes * 60);
 
-      const sessionBook = sessionsRes.data.find((b) => b.book_id === currentSession.book_id);
+      const sessionBook = booksRes.data.find((b) => b.book_id === currentSession.book_id);
       setBook(sessionBook);
 
-      // Start audio with fade in
       if (currentSession.sound_theme && SOUND_THEMES[currentSession.sound_theme]) {
         const track = getRandomTrack(currentSession.sound_theme);
         if (track) {
@@ -85,15 +107,12 @@ const ImmersiveSession = () => {
           setSoundEnabled(true);
         }
       }
-
-      // Start timer
-      startTimer();
     } catch (error) {
       console.error('Failed to load session:', error);
       toast.error('Failed to load session');
       navigate('/dashboard');
     }
-  }, [sessionId, navigate, startTimer]);
+  }, [sessionId, navigate]);
 
   useEffect(() => {
     loadSession();
@@ -119,10 +138,13 @@ const ImmersiveSession = () => {
   }, []);
 
   const confirmExit = useCallback(async () => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     await audioManager.stop(500); // Quick fade out
 
-    const minutesSpent = Math.ceil((session?.duration_minutes * 60 - timeRemaining) / 60);
+    const minutesSpent = Math.ceil((sessionRef.current?.duration_minutes * 60 - timeRemaining) / 60);
 
     try {
       if (minutesSpent > 0) {
@@ -135,7 +157,7 @@ const ImmersiveSession = () => {
       console.error('Failed to exit session:', error);
       navigate('/dashboard');
     }
-  }, [sessionId, session?.duration_minutes, timeRemaining, navigate]);
+  }, [sessionId, timeRemaining, navigate]);
 
   const handleSaveNote = useCallback(async () => {
     if (!noteContent.trim()) return;
