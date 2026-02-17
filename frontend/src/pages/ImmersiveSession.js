@@ -23,6 +23,28 @@ const ImmersiveSession = () => {
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const timerRef = useRef(null);
 
+  const formatTime = useCallback((seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }, []);
+
+  const handleComplete = useCallback(async () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    await audioManager.stop(1000); // Fade out over 1 second
+
+    try {
+      await api.post(`/sessions/${sessionId}/complete`, {
+        actual_minutes: session?.duration_minutes,
+      });
+      toast.success('Session completed!');
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Failed to complete session:', error);
+      toast.error('Failed to complete session');
+    }
+  }, [sessionId, session?.duration_minutes, navigate]);
+
   const startTimer = useCallback(() => {
     timerRef.current = setInterval(() => {
       setTimeRemaining((prev) => {
@@ -81,31 +103,26 @@ const ImmersiveSession = () => {
     };
   }, [sessionId, loadSession]);
 
-  const handleComplete = async () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    await audioManager.stop(1000); // Fade out over 1 second
+  const toggleSound = useCallback(() => {
+    const newMutedState = audioManager.toggleMute();
+    setSoundEnabled(!newMutedState);
+  }, []);
 
-    try {
-      await api.post(`/sessions/${sessionId}/complete`, {
-        actual_minutes: session.duration_minutes,
-      });
-      toast.success('Session completed!');
-      navigate('/dashboard');
-    } catch (error) {
-      console.error('Failed to complete session:', error);
-      toast.error('Failed to complete session');
-    }
-  };
+  const handleVolumeChange = useCallback((newVolume) => {
+    const vol = newVolume[0] / 100; // Convert 0-100 to 0-1
+    setVolume(vol);
+    audioManager.setVolume(vol);
+  }, []);
 
-  const handleExit = () => {
+  const handleExit = useCallback(() => {
     setShowExitConfirm(true);
-  };
+  }, []);
 
-  const confirmExit = async () => {
+  const confirmExit = useCallback(async () => {
     if (timerRef.current) clearInterval(timerRef.current);
     await audioManager.stop(500); // Quick fade out
 
-    const minutesSpent = Math.ceil((session.duration_minutes * 60 - timeRemaining) / 60);
+    const minutesSpent = Math.ceil((session?.duration_minutes * 60 - timeRemaining) / 60);
 
     try {
       if (minutesSpent > 0) {
@@ -118,15 +135,15 @@ const ImmersiveSession = () => {
       console.error('Failed to exit session:', error);
       navigate('/dashboard');
     }
-  };
+  }, [sessionId, session?.duration_minutes, timeRemaining, navigate]);
 
-  const handleSaveNote = async () => {
+  const handleSaveNote = useCallback(async () => {
     if (!noteContent.trim()) return;
 
     try {
       await api.post('/notes', {
         session_id: sessionId,
-        book_id: session.book_id,
+        book_id: session?.book_id,
         content: noteContent,
       });
       toast.success('Note saved');
@@ -136,13 +153,7 @@ const ImmersiveSession = () => {
       console.error('Failed to save note:', error);
       toast.error('Failed to save note');
     }
-  };
-
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, [sessionId, session?.book_id, noteContent]);
 
   if (!session || !book) {
     return (
