@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
 import api from '@/lib/api';
 import { toast } from 'sonner';
-import { BookOpen, Play, Plus, Flame, Calendar as CalendarIcon, Search, Loader2 } from 'lucide-react';
+import { BookOpen, Play, Plus, Flame, Calendar as CalendarIcon, Search, Loader2, Music, Volume2, Pause } from 'lucide-react';
 import BookSearchItem from '@/components/BookSearchItem';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { GENRE_OPTIONS, GENRE_TO_THEME } from '@/utils/constants';
+import { GENRE_OPTIONS, GENRE_TO_THEME, MOOD_OPTIONS, SOUND_THEMES } from '@/utils/constants';
 
 const Dashboard = ({ user }) => {
   const navigate = useNavigate();
@@ -30,6 +30,8 @@ const Dashboard = ({ user }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [showBookDetail, setShowBookDetail] = useState(false);
   const [selectedSearchBook, setSelectedSearchBook] = useState(null);
+  const [previewAudio, setPreviewAudio] = useState(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(null); // stores theme name
 
   // Debounced search
   useEffect(() => {
@@ -51,13 +53,53 @@ const Dashboard = ({ user }) => {
   // Sync sound theme when selected book changes
   useEffect(() => {
     if (selectedBook) {
-      const theme = GENRE_TO_THEME[selectedBook.genre] || 'Focus';
+      // Respect preferred_theme if it exists, otherwise auto-match
+      const theme = selectedBook.preferred_theme || GENRE_TO_THEME[selectedBook.genre] || 'Focus';
       setSessionForm(prev => ({
         ...prev,
         sound_theme: theme
       }));
     }
   }, [selectedBook]);
+
+  // Clean up audio on unmount
+  useEffect(() => {
+    return () => {
+      if (previewAudio) {
+        previewAudio.pause();
+        previewAudio.src = '';
+      }
+    };
+  }, [previewAudio]);
+
+  const handlePreview = (themeName) => {
+    if (isPlayingPreview === themeName) {
+      previewAudio.pause();
+      setIsPlayingPreview(null);
+      return;
+    }
+
+    if (previewAudio) {
+      previewAudio.pause();
+    }
+
+    const theme = SOUND_THEMES[themeName];
+    if (!theme || !theme.tracks.length) return;
+
+    const audio = new Audio(theme.tracks[0].url);
+    audio.volume = 0.5;
+    audio.play();
+    setPreviewAudio(audio);
+    setIsPlayingPreview(themeName);
+
+    // Stop after 10 seconds
+    setTimeout(() => {
+      if (audio) {
+        audio.pause();
+        setIsPlayingPreview(prev => prev === themeName ? null : prev);
+      }
+    }, 10000);
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -87,14 +129,24 @@ const Dashboard = ({ user }) => {
       return;
     }
 
+    // Stop preview if playing
+    if (previewAudio) {
+      previewAudio.pause();
+      setIsPlayingPreview(null);
+    }
+
     try {
-      const theme = GENRE_TO_THEME[selectedBook.genre] || 'Focus';
       const response = await api.post('/sessions', {
         book_id: selectedBook.book_id,
         mood: selectedBook.genre,
-        sound_theme: theme,
+        sound_theme: sessionForm.sound_theme, // Use the (possibly overridden) theme
         duration_minutes: sessionForm.duration_minutes,
       });
+
+      // Update preferred theme in background
+      if (selectedBook.preferred_theme !== sessionForm.sound_theme) {
+        api.patch(`/books/${selectedBook.book_id}`, { preferred_theme: sessionForm.sound_theme });
+      }
 
       navigate(`/session/${response.data.session_id}`);
     } catch (error) {
@@ -296,9 +348,60 @@ const Dashboard = ({ user }) => {
               </Select>
             </div>
             <div>
-              <Label className="text-[#2C2A27]">Atmosphere</Label>
-              <div className="p-3 bg-[#FBFBFB] border border-[#E8E3D9] rounded-md text-[#6A645C] text-sm italic">
-                {selectedBook ? `${selectedBook.genre} (Auto-matched)` : 'Select a book to set atmosphere'}
+              <div className="flex justify-between items-center mb-1.5">
+                <Label className="text-[#2C2A27]">Atmosphere</Label>
+                {selectedBook && (
+                  <span className="text-[10px] uppercase tracking-wider text-[#A68A64] font-medium bg-[#F4F1EA] px-1.5 py-0.5 rounded">
+                    Suggestions: {GENRE_TO_THEME[selectedBook.genre] || 'Focus'}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1 py-1 custom-scrollbar">
+                {MOOD_OPTIONS.map((mood) => (
+                  <div
+                    key={mood.value}
+                    onClick={() => setSessionForm({ ...sessionForm, sound_theme: mood.value })}
+                    className={`
+                      flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer group
+                      ${sessionForm.sound_theme === mood.value
+                        ? 'bg-[#F4F1EA] border-[#A68A64] shadow-sm'
+                        : 'bg-white border-[#E8E3D9] hover:border-[#A68A64]'}
+                    `}
+                  >
+                    <div className="flex items-center">
+                      <span className="text-xl mr-3 grayscale group-hover:grayscale-0 transition-all">
+                        {mood.icon}
+                      </span>
+                      <div className="text-left">
+                        <div className="font-semibold text-sm text-[#2C2A27]">
+                          {mood.label}
+                        </div>
+                        <div className="text-[10px] text-[#6A645C] line-clamp-1">
+                          {mood.description}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePreview(mood.value);
+                      }}
+                      className={`
+                        p-2 rounded-full transition-colors
+                        ${isPlayingPreview === mood.value
+                          ? 'bg-[#A68A64] text-white'
+                          : 'text-[#9B948B] hover:bg-[#F4F1EA] hover:text-[#A68A64]'}
+                      `}
+                    >
+                      {isPlayingPreview === mood.value ? (
+                        <Pause className="w-3.5 h-3.5 fill-current" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                      )}
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
             <div>

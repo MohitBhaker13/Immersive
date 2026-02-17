@@ -62,6 +62,10 @@ class Book(BaseModel):
     status: str  # want_to_read, currently_reading, completed
     total_minutes: int = 0
     total_sessions: int = 0
+    description: Optional[str] = None
+    page_count: Optional[int] = None
+    google_books_id: Optional[str] = None
+    preferred_theme: Optional[str] = None
     created_at: datetime
 
 class BookCreate(BaseModel):
@@ -73,6 +77,7 @@ class BookCreate(BaseModel):
     page_count: Optional[int] = None
     status: str = "want_to_read"
     google_books_id: Optional[str] = None
+    preferred_theme: Optional[str] = None
 
 class BookDiscovery(BaseModel):
     id: str
@@ -90,6 +95,7 @@ class BookUpdate(BaseModel):
     genre: Optional[str] = None
     cover_url: Optional[str] = None
     status: Optional[str] = None
+    preferred_theme: Optional[str] = None
 
 class Session(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -440,6 +446,7 @@ async def create_book(book_data: BookCreate, request: Request, session_token: Op
         "page_count": book_data.page_count,
         "status": book_data.status,
         "google_books_id": book_data.google_books_id,
+        "preferred_theme": book_data.preferred_theme,
         "total_minutes": 0,
         "total_sessions": 0,
         "created_at": datetime.now(timezone.utc)
@@ -447,6 +454,27 @@ async def create_book(book_data: BookCreate, request: Request, session_token: Op
     
     await db.books.insert_one(new_book)
     return Book(**new_book)
+
+@api_router.patch("/books/{book_id}", response_model=Book)
+async def update_book(book_id: str, book_update: BookUpdate, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Partially update a book"""
+    user = await get_current_user(request, session_token)
+    
+    update_data = {k: v for k, v in book_update.model_dump().items() if v is not None}
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+        
+    result = await db.books.update_one(
+        {"book_id": book_id, "user_id": user["user_id"]},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Book not found")
+        
+    updated_book = await db.books.find_one({"book_id": book_id}, {"_id": 0})
+    return Book(**updated_book)
 
 @api_router.get("/books/search", response_model=List[BookDiscovery])
 async def search_books(q: str):

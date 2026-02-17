@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
 import { toast } from 'sonner';
-import { X, Volume2, VolumeX, StickyNote, Volume1 } from 'lucide-react';
+import { X, Volume2, VolumeX, StickyNote, Volume1, Music } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { SOUND_THEMES, getRandomTrack } from '@/utils/constants';
+import { SOUND_THEMES, getRandomTrack, MOOD_OPTIONS } from '@/utils/constants';
 import audioManager from '@/utils/audioManager';
 
 const ImmersiveSession = () => {
@@ -19,6 +19,8 @@ const ImmersiveSession = () => {
   const [volume, setVolume] = useState(0.3);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [showNoteDialog, setShowNoteDialog] = useState(false);
+  const [showAtmosphereDialog, setShowAtmosphereDialog] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState(null);
   const [noteContent, setNoteContent] = useState('');
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const sessionRef = useRef(null);
@@ -90,9 +92,11 @@ const ImmersiveSession = () => {
       setBook(sessionBook);
 
       if (currentSession.sound_theme && SOUND_THEMES[currentSession.sound_theme]) {
-        const track = getRandomTrack(currentSession.sound_theme);
+        const themeToPlay = currentSession.sound_theme;
+        setCurrentTheme(themeToPlay);
+        const track = getRandomTrack(themeToPlay);
         if (track) {
-          await audioManager.play(currentSession.sound_theme, track.url, 2000);
+          await audioManager.play(themeToPlay, track.url, 2000);
           setSoundEnabled(true);
         }
       }
@@ -124,6 +128,25 @@ const ImmersiveSession = () => {
   const handleExit = useCallback(() => {
     setShowExitConfirm(true);
   }, []);
+
+  const handleThemeChange = useCallback(async (themeName) => {
+    if (themeName === currentTheme) return;
+
+    setCurrentTheme(themeName);
+    const track = getRandomTrack(themeName);
+    if (track) {
+      await audioManager.play(themeName, track.url, 1500); // Smooth transition
+      setSoundEnabled(true);
+
+      // Persist preference to backend for this book
+      if (book) {
+        api.patch(`/books/${book.book_id}`, { preferred_theme: themeName }).catch(err => {
+          console.error('Failed to save preferred theme:', err);
+        });
+      }
+    }
+    setShowAtmosphereDialog(false);
+  }, [currentTheme, book]);
 
   const confirmExit = useCallback(async () => {
     await audioManager.stop(500); // Quick fade out
@@ -171,28 +194,29 @@ const ImmersiveSession = () => {
 
   return (
     <div className="min-h-screen bg-[#F8F6F1] paper-texture relative">
-      {/* Subtle background based on mood */}
+      {/* Subtle background based on atmosphere */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="absolute inset-0 pointer-events-none transition-all duration-1000 ease-in-out"
         style={{
-          background: session.mood === 'Horror'
-            ? 'linear-gradient(180deg, rgba(200,195,188,0.3) 0%, rgba(248,246,241,1) 100%)'
-            : session.mood === 'Romance'
-              ? 'linear-gradient(180deg, rgba(255,245,235,0.4) 0%, rgba(248,246,241,1) 100%)'
-              : 'transparent',
+          background: SOUND_THEMES[currentTheme]?.ui?.bg || '#F8F6F1',
         }}
       />
 
       {/* Top Bar */}
       <div className="relative z-10 flex items-center justify-between px-4 md:px-8 py-4 md:py-6">
-        <div className="text-[#6A645C] text-xs md:text-sm" style={{ fontFamily: 'Inter, sans-serif' }}>
-          {session.mood} Atmosphere
+        <div className="text-[#6A645C] text-xs md:text-sm flex items-center space-x-1 transition-colors duration-500"
+          style={{ fontFamily: 'Inter, sans-serif', color: SOUND_THEMES[currentTheme]?.ui?.accent }}>
+          <Music className="w-3 h-3" />
+          <span>{SOUND_THEMES[currentTheme]?.name || 'Ambient'} Atmosphere</span>
         </div>
 
         <div
           data-testid="timer-display"
-          className="text-xl md:text-2xl font-medium text-[#2C2A27]"
-          style={{ fontFamily: 'Playfair Display, serif' }}
+          className="text-xl md:text-2xl font-medium transition-colors duration-500"
+          style={{
+            fontFamily: 'Playfair Display, serif',
+            color: SOUND_THEMES[currentTheme]?.ui?.text || '#2C2A27'
+          }}
         >
           {formatTime(timeRemaining)}
         </div>
@@ -200,33 +224,49 @@ const ImmersiveSession = () => {
         <button
           data-testid="exit-session-btn"
           onClick={handleExit}
-          className="text-[#6A645C] active:text-[#2C2A27] transition-colors p-2"
+          className="transition-colors duration-500 p-2"
+          style={{ color: SOUND_THEMES[currentTheme]?.ui?.accent || '#6A645C' }}
         >
           <X className="w-5 h-5 md:w-6 md:h-6" />
         </button>
       </div>
 
       {/* Reading Area */}
-      <div className="relative z-10 max-w-[720px] mx-auto px-6 md:px-12 py-8 md:py-16">
+      <div
+        className="relative z-10 max-w-[720px] mx-auto px-6 md:px-12 py-8 md:py-16 mt-8 rounded-2xl transition-all duration-1000 ease-in-out shadow-2xl"
+        style={{
+          backgroundColor: SOUND_THEMES[currentTheme]?.ui?.paper || 'rgba(255, 255, 255, 0.9)',
+          boxShadow: `0 25px 50px -12px ${SOUND_THEMES[currentTheme]?.ui?.shadow || 'rgba(0, 0, 0, 0.1)'}`,
+          backdropFilter: 'blur(8px)',
+        }}
+      >
         <div className="mb-6 md:mb-8">
           <h1
-            className="text-3xl md:text-4xl font-bold text-[#2C2A27] mb-3"
-            style={{ fontFamily: 'Playfair Display, serif' }}
+            className="text-3xl md:text-4xl font-bold mb-3 transition-colors duration-500"
+            style={{
+              fontFamily: 'Playfair Display, serif',
+              color: SOUND_THEMES[currentTheme]?.ui?.text || '#2C2A27'
+            }}
           >
             {book.title}
           </h1>
-          <p className="text-[#6A645C] text-base md:text-lg" style={{ fontFamily: 'Lora, serif' }}>
+          <p className="opacity-80 text-base md:text-lg transition-colors duration-500"
+            style={{
+              fontFamily: 'Lora, serif',
+              color: SOUND_THEMES[currentTheme]?.ui?.text || '#6A645C'
+            }}>
             by {book.author}
           </p>
         </div>
 
         {/* Reading Content Placeholder */}
         <div
-          className="reading-mode space-y-5 md:space-y-6 text-[#2C2A27]"
+          className="reading-mode space-y-5 md:space-y-6 transition-colors duration-500"
           style={{
             fontFamily: 'Lora, serif',
             fontSize: '17px',
             lineHeight: '1.7',
+            color: SOUND_THEMES[currentTheme]?.ui?.text || '#2C2A27'
           }}
         >
           <p>
@@ -235,15 +275,12 @@ const ImmersiveSession = () => {
             on the text.
           </p>
           <p>
-            The warm paper tones and carefully chosen typography create a comfortable reading environment.
-            The ambient soundscape enhances the mood without being intrusive.
+            The environment has shifted to match your {SOUND_THEMES[currentTheme]?.name || 'chosen'} atmosphere.
+            The colors and sounds are now in perfect harmony to keep you in the zone.
           </p>
           <p>
             Use this time to immerse yourself fully in your book. When thoughts arise, capture them
             with the note button. The timer will gently remind you when your session is complete.
-          </p>
-          <p>
-            This space is yours. No notifications, no distractions. Just you and the story.
           </p>
         </div>
       </div>
@@ -251,6 +288,21 @@ const ImmersiveSession = () => {
       {/* Floating Controls - Mobile Optimized */}
       <div className="fixed bottom-6 right-4 md:bottom-8 md:right-8 z-20 flex flex-col space-y-3">
         {/* Volume Control */}
+        <button
+          onClick={() => setShowAtmosphereDialog(true)}
+          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border duration-500"
+          style={{
+            backgroundColor: showAtmosphereDialog ? (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64') : (SOUND_THEMES[currentTheme]?.ui?.paper || 'white'),
+            borderColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#E8E3D9',
+            color: showAtmosphereDialog
+              ? (['Horror', 'SciFi', 'Cyberpunk', 'Storm', 'Thriller', 'Epic'].includes(currentTheme) ? '#1e293b' : 'white')
+              : (SOUND_THEMES[currentTheme]?.ui?.accent || '#2C2A27')
+          }}
+          title="Change atmosphere"
+        >
+          <Music className="w-6 h-6 md:w-5 md:h-5" />
+        </button>
+
         <div
           className="relative group"
           onMouseEnter={() => setShowVolumeSlider(true)}
@@ -263,14 +315,18 @@ const ImmersiveSession = () => {
               e.preventDefault();
               toggleSound();
             }}
-            className="w-14 h-14 md:w-12 md:h-12 rounded-full bg-white border border-[#E8E3D9] flex items-center justify-center shadow-lg active:border-[#A68A64] transition-colors"
+            className="w-14 h-14 md:w-12 md:h-12 rounded-full border flex items-center justify-center shadow-lg transition-all duration-500"
+            style={{
+              backgroundColor: SOUND_THEMES[currentTheme]?.ui?.paper || 'white',
+              borderColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#E8E3D9'
+            }}
             title={soundEnabled ? 'Mute sound' : 'Unmute sound'}
           >
             {soundEnabled ? (
               volume > 0.5 ? (
-                <Volume2 className="w-6 h-6 md:w-5 md:h-5 text-[#2C2A27]" />
+                <Volume2 className="w-6 h-6 md:w-5 md:h-5" style={{ color: SOUND_THEMES[currentTheme]?.ui?.accent || '#2C2A27' }} />
               ) : (
-                <Volume1 className="w-6 h-6 md:w-5 md:h-5 text-[#2C2A27]" />
+                <Volume1 className="w-6 h-6 md:w-5 md:h-5" style={{ color: SOUND_THEMES[currentTheme]?.ui?.accent || '#2C2A27' }} />
               )
             ) : (
               <VolumeX className="w-6 h-6 md:w-5 md:h-5 text-[#9B948B]" />
@@ -303,10 +359,14 @@ const ImmersiveSession = () => {
         <button
           data-testid="add-note-btn"
           onClick={() => setShowNoteDialog(true)}
-          className="w-14 h-14 md:w-12 md:h-12 rounded-full bg-[#A68A64] flex items-center justify-center shadow-lg active:bg-[#8F7556] transition-colors"
+          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500 active:scale-95"
+          style={{
+            backgroundColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64',
+            color: ['Horror', 'SciFi', 'Cyberpunk', 'Storm', 'Thriller', 'Epic'].includes(currentTheme) ? '#1e293b' : 'white'
+          }}
           title="Add note"
         >
-          <StickyNote className="w-6 h-6 md:w-5 md:h-5 text-white" />
+          <StickyNote className="w-6 h-6 md:w-5 md:h-5" />
         </button>
       </div>
 
@@ -332,6 +392,36 @@ const ImmersiveSession = () => {
             >
               Save Note
             </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Atmosphere Selector Dialog */}
+      <Dialog open={showAtmosphereDialog} onOpenChange={setShowAtmosphereDialog}>
+        <DialogContent className="bg-white border-[#E8E3D9] max-w-sm p-4 overflow-hidden">
+          <DialogTitle style={{ fontFamily: 'Playfair Display, serif' }} className="text-xl mb-4">Change Atmosphere</DialogTitle>
+          <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+            {MOOD_OPTIONS.map((mood) => (
+              <div
+                key={mood.value}
+                onClick={() => handleThemeChange(mood.value)}
+                className={`
+                  flex items-center p-3 rounded-xl border transition-all cursor-pointer
+                  ${currentTheme === mood.value
+                    ? 'bg-[#F4F1EA] border-[#A68A64] shadow-sm'
+                    : 'bg-white border-[#E8E3D9] hover:border-[#A68A64]'}
+                `}
+              >
+                <span className="text-xl mr-3">{mood.icon}</span>
+                <div className="text-left">
+                  <div className="font-semibold text-sm text-[#2C2A27]">{mood.label}</div>
+                  <div className="text-[10px] text-[#6A645C] line-clamp-1">{mood.description}</div>
+                </div>
+                {currentTheme === mood.value && (
+                  <div className="ml-auto w-2 h-2 rounded-full bg-[#A68A64] animate-pulse" />
+                )}
+              </div>
+            ))}
           </div>
         </DialogContent>
       </Dialog>
