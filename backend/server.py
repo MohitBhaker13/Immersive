@@ -86,6 +86,7 @@ class Session(BaseModel):
     mood: str
     sound_theme: str
     duration_minutes: int
+    actual_minutes: Optional[int] = None
     started_at: datetime
     ended_at: Optional[datetime] = None
     notes_count: int = 0
@@ -533,12 +534,15 @@ async def complete_session(session_id: str, completion: SessionComplete, request
         raise HTTPException(status_code=404, detail="Session not found")
     
     ended_at = datetime.now(timezone.utc)
-    actual_minutes = completion.actual_minutes or session["duration_minutes"]
+    actual_minutes = completion.actual_minutes if completion.actual_minutes is not None else session["duration_minutes"]
     
     # Update session
     await db.sessions.update_one(
         {"session_id": session_id},
-        {"$set": {"ended_at": ended_at}}
+        {"$set": {
+            "ended_at": ended_at,
+            "actual_minutes": actual_minutes
+        }}
     )
     
     # Update book stats
@@ -689,7 +693,7 @@ async def get_calendar(request: Request, session_token: Optional[str] = Cookie(N
     # Get all completed sessions
     sessions = await db.sessions.find(
         {"user_id": user["user_id"], "ended_at": {"$ne": None}},
-        {"_id": 0, "started_at": 1, "duration_minutes": 1}
+        {"_id": 0, "started_at": 1, "duration_minutes": 1, "actual_minutes": 1}
     ).to_list(10000)
     
     # Aggregate by date
@@ -705,7 +709,13 @@ async def get_calendar(request: Request, session_token: Optional[str] = Cookie(N
             calendar_data[date_key] = {"sessions": 0, "minutes": 0}
         
         calendar_data[date_key]["sessions"] += 1
-        calendar_data[date_key]["minutes"] += session.get("duration_minutes", 0)
+        
+        # Use actual_minutes if available, fallback to duration_minutes
+        actual = session.get("actual_minutes")
+        if actual is None:
+            actual = session.get("duration_minutes", 0)
+        
+        calendar_data[date_key]["minutes"] += actual
     
     return calendar_data
 
