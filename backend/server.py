@@ -1,0 +1,729 @@
+from fastapi import FastAPI, APIRouter, HTTPException, Cookie, Response, Request
+from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+import logging
+from pathlib import Path
+from pydantic import BaseModel, Field, ConfigDict
+from typing import List, Optional
+import uuid
+from datetime import datetime, timezone, timedelta
+import requests
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+# Import Google OAuth handler
+try:
+    from auth_google import google_oauth
+    GOOGLE_OAUTH_ENABLED = bool(os.getenv('GOOGLE_CLIENT_ID'))
+except ImportError:
+    GOOGLE_OAUTH_ENABLED = False
+    print("⚠️  Google OAuth not configured. Using Emergent managed auth only.")
+
+# MongoDB connection
+mongo_url = os.environ['MONGO_URL']
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ['DB_NAME']]
+
+# Create the main app without a prefix
+app = FastAPI()
+
+# Create a router with the /api prefix
+api_router = APIRouter(prefix="/api")
+
+# ==================== MODELS ====================
+
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_id: str
+    email: str
+    name: str
+    picture: Optional[str] = None
+    daily_goal_minutes: int = 30
+    default_mood: str = "Focus"
+    sound_enabled: bool = True
+    reading_type: Optional[str] = None
+    created_at: datetime
+
+class SessionData(BaseModel):
+    session_id: str
+
+class Book(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    book_id: str
+    user_id: str
+    title: str
+    author: str
+    genre: str
+    cover_url: Optional[str] = None
+    status: str  # want_to_read, currently_reading, completed
+    total_minutes: int = 0
+    total_sessions: int = 0
+    created_at: datetime
+
+class BookCreate(BaseModel):
+    title: str
+    author: str
+    genre: str
+    cover_url: Optional[str] = None
+    status: str = "want_to_read"
+
+class BookUpdate(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
+    genre: Optional[str] = None
+    cover_url: Optional[str] = None
+    status: Optional[str] = None
+
+class Session(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    session_id: str
+    user_id: str
+    book_id: str
+    mood: str
+    sound_theme: str
+    duration_minutes: int
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    notes_count: int = 0
+
+class SessionCreate(BaseModel):
+    book_id: str
+    mood: str
+    sound_theme: str
+    duration_minutes: int
+
+class SessionComplete(BaseModel):
+    actual_minutes: Optional[int] = None
+
+class Note(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    note_id: str
+    session_id: str
+    book_id: str
+    user_id: str
+    content: str
+    created_at: datetime
+
+class NoteCreate(BaseModel):
+    session_id: str
+    book_id: str
+    content: str
+
+class Streak(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_id: str
+    current_streak: int = 0
+    longest_streak: int = 0
+    last_active_date: Optional[str] = None
+
+class OnboardingData(BaseModel):
+    reading_type: str
+    daily_goal_minutes: int
+    default_mood: str
+    sound_enabled: bool
+
+# ==================== AUTH HELPERS ====================
+
+async def get_current_user(request: Request, session_token: Optional[str] = Cookie(None)) -> dict:
+    """Get user from session token (cookie or header)"""
+    token = session_token
+    
+    # Fallback to Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "")
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Find session in database
+    session_doc = await db.user_sessions.find_one(
+        {"session_token": token},
+        {"_id": 0}
+    )
+    
+    if not session_doc:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    # Check expiry
+    expires_at = session_doc["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Session expired")
+    
+    # Get user data
+    user_doc = await db.users.find_one(
+        {"user_id": session_doc["user_id"]},
+        {"_id": 0}
+    )
+    
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    
+    return user_doc
+
+# ==================== AUTH ROUTES ====================
+
+@api_router.post("/auth/google")
+async def google_login(request: Request, response: Response):
+    """
+    Google OAuth login - accepts Google ID token from frontend
+    This is for standard Google OAuth (not Emergent managed)
+    """
+    if not GOOGLE_OAUTH_ENABLED:
+        raise HTTPException(
+            status_code=501, 
+            detail="Google OAuth not configured. Please set GOOGLE_CLIENT_ID in environment."
+        )
+    
+    try:
+        body = await request.json()
+        id_token = body.get('token') or body.get('credential')
+        
+        if not id_token:
+            raise HTTPException(status_code=400, detail="No token provided")
+        
+        # Verify Google token
+        user_info = google_oauth.verify_token(id_token)
+        
+        if not user_info.get('email_verified'):
+            raise HTTPException(status_code=400, detail="Email not verified")
+        
+        # Check if user exists
+        existing_user = await db.users.find_one(
+            {"email": user_info["email"]},
+            {"_id": 0}
+        )
+        
+        if existing_user:
+            user_id = existing_user["user_id"]
+            # Update user info
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "name": user_info.get("name", existing_user.get("name")),
+                    "picture": user_info.get("picture", existing_user.get("picture"))
+                }}
+            )
+        else:
+            # Create new user
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            new_user = {
+                "user_id": user_id,
+                "email": user_info["email"],
+                "name": user_info.get("name", ""),
+                "picture": user_info.get("picture"),
+                "daily_goal_minutes": 30,
+                "default_mood": "Focus",
+                "sound_enabled": True,
+                "reading_type": None,
+                "created_at": datetime.now(timezone.utc)
+            }
+            await db.users.insert_one(new_user)
+            
+            # Initialize streak
+            await db.streaks.insert_one({
+                "user_id": user_id,
+                "current_streak": 0,
+                "longest_streak": 0,
+                "last_active_date": None
+            })
+        
+        # Create session
+        session_token = google_oauth.generate_session_token()
+        await db.user_sessions.insert_one({
+            "user_id": user_id,
+            "session_token": session_token,
+            "expires_at": google_oauth.create_session_expiry(7),
+            "created_at": datetime.now(timezone.utc)
+        })
+        
+        # Set httpOnly cookie
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=True,
+            samesite="none",
+            path="/",
+            max_age=7 * 24 * 60 * 60
+        )
+        
+        # Get user data
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        
+        return user_doc
+        
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:
+        logging.error(f"Google auth error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Authentication failed")
+
+@api_router.post("/auth/session")
+async def exchange_session(session_data: SessionData, response: Response):
+    """
+    Emergent managed auth - Exchange session_id for user data and set cookie
+    This maintains backwards compatibility with Emergent's authentication
+    """
+    try:
+        # Call Emergent Auth API
+        auth_response = requests.get(
+            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+            headers={"X-Session-ID": session_data.session_id},
+            timeout=10
+        )
+        
+        if auth_response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Invalid session_id")
+        
+        auth_data = auth_response.json()
+        
+        # Check if user exists
+        existing_user = await db.users.find_one(
+            {"email": auth_data["email"]},
+            {"_id": 0}
+        )
+        
+        if existing_user:
+            user_id = existing_user["user_id"]
+            # Update user info
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "name": auth_data.get("name", existing_user.get("name")),
+                    "picture": auth_data.get("picture", existing_user.get("picture"))
+                }}
+            )
+        else:
+            # Create new user
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            new_user = {
+                "user_id": user_id,
+                "email": auth_data["email"],
+                "name": auth_data.get("name", ""),
+                "picture": auth_data.get("picture"),
+                "daily_goal_minutes": 30,
+                "default_mood": "Focus",
+                "sound_enabled": True,
+                "reading_type": None,
+                "created_at": datetime.now(timezone.utc)
+            }
+            await db.users.insert_one(new_user)
+            
+            # Initialize streak
+            await db.streaks.insert_one({
+                "user_id": user_id,
+                "current_streak": 0,
+                "longest_streak": 0,
+                "last_active_date": None
+            })
+        
+        # Store session
+        session_token = auth_data["session_token"]
+        await db.user_sessions.insert_one({
+            "user_id": user_id,
+            "session_token": session_token,
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+            "created_at": datetime.now(timezone.utc)
+        })
+        
+        # Set httpOnly cookie
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=True,
+            samesite="none",
+            path="/",
+            max_age=7 * 24 * 60 * 60
+        )
+        
+        # Get updated user
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        
+        return user_doc
+        
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Auth service error: {str(e)}")
+
+@api_router.get("/auth/me")
+async def get_me(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get current user info"""
+    user = await get_current_user(request, session_token)
+    return user
+
+@api_router.post("/auth/logout")
+async def logout(request: Request, response: Response, session_token: Optional[str] = Cookie(None)):
+    """Logout user"""
+    if session_token:
+        await db.user_sessions.delete_one({"session_token": session_token})
+    
+    response.delete_cookie(key="session_token", path="/", samesite="none", secure=True)
+    return {"message": "Logged out"}
+
+@api_router.post("/auth/onboarding")
+async def complete_onboarding(data: OnboardingData, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Complete user onboarding"""
+    user = await get_current_user(request, session_token)
+    
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {
+            "reading_type": data.reading_type,
+            "daily_goal_minutes": data.daily_goal_minutes,
+            "default_mood": data.default_mood,
+            "sound_enabled": data.sound_enabled
+        }}
+    )
+    
+    return {"message": "Onboarding complete"}
+
+# ==================== BOOK ROUTES ====================
+
+@api_router.get("/books", response_model=List[Book])
+async def get_books(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get all books for current user"""
+    user = await get_current_user(request, session_token)
+    
+    books = await db.books.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    for book in books:
+        if isinstance(book.get("created_at"), str):
+            book["created_at"] = datetime.fromisoformat(book["created_at"])
+    
+    return books
+
+@api_router.post("/books", response_model=Book)
+async def create_book(book_data: BookCreate, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Create a new book"""
+    user = await get_current_user(request, session_token)
+    
+    book_id = f"book_{uuid.uuid4().hex[:12]}"
+    new_book = {
+        "book_id": book_id,
+        "user_id": user["user_id"],
+        "title": book_data.title,
+        "author": book_data.author,
+        "genre": book_data.genre,
+        "cover_url": book_data.cover_url,
+        "status": book_data.status,
+        "total_minutes": 0,
+        "total_sessions": 0,
+        "created_at": datetime.now(timezone.utc)
+    }
+    
+    await db.books.insert_one(new_book)
+    return Book(**new_book)
+
+@api_router.get("/books/{book_id}", response_model=Book)
+async def get_book(book_id: str, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get a specific book"""
+    user = await get_current_user(request, session_token)
+    
+    book = await db.books.find_one(
+        {"book_id": book_id, "user_id": user["user_id"]},
+        {"_id": 0}
+    )
+    
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    
+    if isinstance(book.get("created_at"), str):
+        book["created_at"] = datetime.fromisoformat(book["created_at"])
+    
+    return book
+
+@api_router.put("/books/{book_id}", response_model=Book)
+async def update_book(book_id: str, book_update: BookUpdate, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Update a book"""
+    user = await get_current_user(request, session_token)
+    
+    # Build update dict
+    update_data = {k: v for k, v in book_update.model_dump().items() if v is not None}
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    result = await db.books.update_one(
+        {"book_id": book_id, "user_id": user["user_id"]},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Book not found")
+    
+    updated_book = await db.books.find_one(
+        {"book_id": book_id},
+        {"_id": 0}
+    )
+    
+    return Book(**updated_book)
+
+@api_router.delete("/books/{book_id}")
+async def delete_book(book_id: str, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Delete a book"""
+    user = await get_current_user(request, session_token)
+    
+    result = await db.books.delete_one({"book_id": book_id, "user_id": user["user_id"]})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Book not found")
+    
+    return {"message": "Book deleted"}
+
+# ==================== SESSION ROUTES ====================
+
+@api_router.post("/sessions", response_model=Session)
+async def start_session(session_data: SessionCreate, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Start a reading session"""
+    user = await get_current_user(request, session_token)
+    
+    # Verify book exists
+    book = await db.books.find_one(
+        {"book_id": session_data.book_id, "user_id": user["user_id"]},
+        {"_id": 0}
+    )
+    
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    
+    session_id = f"session_{uuid.uuid4().hex[:12]}"
+    new_session = {
+        "session_id": session_id,
+        "user_id": user["user_id"],
+        "book_id": session_data.book_id,
+        "mood": session_data.mood,
+        "sound_theme": session_data.sound_theme,
+        "duration_minutes": session_data.duration_minutes,
+        "started_at": datetime.now(timezone.utc),
+        "ended_at": None,
+        "notes_count": 0
+    }
+    
+    await db.sessions.insert_one(new_session)
+    return Session(**new_session)
+
+@api_router.post("/sessions/{session_id}/complete")
+async def complete_session(session_id: str, completion: SessionComplete, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Complete a reading session"""
+    user = await get_current_user(request, session_token)
+    
+    session = await db.sessions.find_one(
+        {"session_id": session_id, "user_id": user["user_id"]},
+        {"_id": 0}
+    )
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    ended_at = datetime.now(timezone.utc)
+    actual_minutes = completion.actual_minutes or session["duration_minutes"]
+    
+    # Update session
+    await db.sessions.update_one(
+        {"session_id": session_id},
+        {"$set": {"ended_at": ended_at}}
+    )
+    
+    # Update book stats
+    await db.books.update_one(
+        {"book_id": session["book_id"]},
+        {
+            "$inc": {
+                "total_minutes": actual_minutes,
+                "total_sessions": 1
+            },
+            "$set": {"status": "currently_reading"}
+        }
+    )
+    
+    # Update streak
+    today = datetime.now(timezone.utc).date().isoformat()
+    streak = await db.streaks.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    
+    if streak:
+        last_active = streak.get("last_active_date")
+        current_streak = streak.get("current_streak", 0)
+        longest_streak = streak.get("longest_streak", 0)
+        
+        if last_active == today:
+            # Already logged today
+            pass
+        elif last_active:
+            from datetime import date
+            last_date = date.fromisoformat(last_active)
+            today_date = date.fromisoformat(today)
+            days_diff = (today_date - last_date).days
+            
+            if days_diff == 1:
+                # Continue streak
+                current_streak += 1
+            else:
+                # Reset streak
+                current_streak = 1
+        else:
+            # First activity
+            current_streak = 1
+        
+        longest_streak = max(longest_streak, current_streak)
+        
+        await db.streaks.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {
+                "current_streak": current_streak,
+                "longest_streak": longest_streak,
+                "last_active_date": today
+            }}
+        )
+    
+    return {"message": "Session completed", "minutes": actual_minutes}
+
+@api_router.get("/sessions", response_model=List[Session])
+async def get_sessions(request: Request, session_token: Optional[str] = Cookie(None), book_id: Optional[str] = None):
+    """Get sessions for current user"""
+    user = await get_current_user(request, session_token)
+    
+    query = {"user_id": user["user_id"]}
+    if book_id:
+        query["book_id"] = book_id
+    
+    sessions = await db.sessions.find(query, {"_id": 0}).sort("started_at", -1).to_list(1000)
+    
+    for session in sessions:
+        if isinstance(session.get("started_at"), str):
+            session["started_at"] = datetime.fromisoformat(session["started_at"])
+        if session.get("ended_at") and isinstance(session["ended_at"], str):
+            session["ended_at"] = datetime.fromisoformat(session["ended_at"])
+    
+    return sessions
+
+# ==================== NOTE ROUTES ====================
+
+@api_router.post("/notes", response_model=Note)
+async def create_note(note_data: NoteCreate, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Create a note"""
+    user = await get_current_user(request, session_token)
+    
+    note_id = f"note_{uuid.uuid4().hex[:12]}"
+    new_note = {
+        "note_id": note_id,
+        "session_id": note_data.session_id,
+        "book_id": note_data.book_id,
+        "user_id": user["user_id"],
+        "content": note_data.content,
+        "created_at": datetime.now(timezone.utc)
+    }
+    
+    await db.notes.insert_one(new_note)
+    
+    # Update session notes count
+    await db.sessions.update_one(
+        {"session_id": note_data.session_id},
+        {"$inc": {"notes_count": 1}}
+    )
+    
+    return Note(**new_note)
+
+@api_router.get("/notes", response_model=List[Note])
+async def get_notes(request: Request, session_token: Optional[str] = Cookie(None), book_id: Optional[str] = None):
+    """Get notes for current user"""
+    user = await get_current_user(request, session_token)
+    
+    query = {"user_id": user["user_id"]}
+    if book_id:
+        query["book_id"] = book_id
+    
+    notes = await db.notes.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    for note in notes:
+        if isinstance(note.get("created_at"), str):
+            note["created_at"] = datetime.fromisoformat(note["created_at"])
+    
+    return notes
+
+# ==================== STREAK ROUTES ====================
+
+@api_router.get("/streak", response_model=Streak)
+async def get_streak(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Get user's reading streak"""
+    user = await get_current_user(request, session_token)
+    
+    streak = await db.streaks.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    
+    if not streak:
+        # Initialize if doesn't exist
+        new_streak = {
+            "user_id": user["user_id"],
+            "current_streak": 0,
+            "longest_streak": 0,
+            "last_active_date": None
+        }
+        await db.streaks.insert_one(new_streak)
+        return Streak(**new_streak)
+    
+    return Streak(**streak)
+
+# ==================== CALENDAR ROUTES ====================
+
+@api_router.get("/calendar")
+async def get_calendar(request: Request, session_token: Optional[str] = Cookie(None), year: int = None, month: int = None):
+    """Get reading activity calendar"""
+    user = await get_current_user(request, session_token)
+    
+    # Get all completed sessions
+    sessions = await db.sessions.find(
+        {"user_id": user["user_id"], "ended_at": {"$ne": None}},
+        {"_id": 0, "started_at": 1, "duration_minutes": 1}
+    ).to_list(10000)
+    
+    # Aggregate by date
+    calendar_data = {}
+    for session in sessions:
+        started_at = session.get("started_at")
+        if isinstance(started_at, str):
+            started_at = datetime.fromisoformat(started_at)
+        
+        date_key = started_at.date().isoformat()
+        
+        if date_key not in calendar_data:
+            calendar_data[date_key] = {"sessions": 0, "minutes": 0}
+        
+        calendar_data[date_key]["sessions"] += 1
+        calendar_data[date_key]["minutes"] += session.get("duration_minutes", 0)
+    
+    return calendar_data
+
+# Include the router in the main app
+app.include_router(api_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()

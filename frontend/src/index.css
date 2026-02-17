@@ -1,0 +1,226 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        /* Modern Paper color system */
+        --paper-base: 29 15 8;  /* #F8F6F1 */
+        --paper-warm: 27 15 10; /* #F4F1EA */
+        --paper-card: 0 0% 100%; /* #FFFFFF */
+        --paper-border: 25 15 88%; /* #E8E3D9 */
+        
+        /* Text colors */
+        --text-primary: 22 5 17%; /* #2C2A27 */
+        --text-secondary: 26 8 40%; /* #6A645C */
+        --text-muted: 30 7 60%; /* #9B948B */
+        
+        /* Accent - muted brown */
+        --accent: 31 25 52%; /* #A68A64 */
+        --accent-hover: 31 25 45%;
+        
+        --background: 29 15 97%; /* Off-white paper */
+        --foreground: 22 5 17%;
+        --card: 0 0% 100%;
+        --card-foreground: 22 5 17%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 22 5 17%;
+        --primary: 31 25 52%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 30 7 60%;
+        --secondary-foreground: 22 5 17%;
+        --muted: 30 7 95%;
+        --muted-foreground: 26 8 40%;
+        --border: 25 15 88%;
+        --input: 25 15 88%;
+        --ring: 31 25 52%;
+        --radius: 0.5rem;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+        -webkit-tap-highlight-color: rgba(166, 138, 100, 0.2);
+    }
+    
+    body {
+        @apply bg-[#F8F6F1] text-[#2C2A27];
+        font-family: 'Lora', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        margin: 0;
+        padding: 0;
+        /* Mobile-first: prevent horizontal scroll */
+        overflow-x: hidden;
+        /* Mobile-first: minimum font size for readability */
+        font-size: 16px;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Playfair Display', serif;
+        font-weight: 600;
+    }
+    
+    code {
+        font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+    }
+    
+    /* Mobile-first: ensure all interactive elements are touch-friendly */
+    button, a, input, select, textarea {
+        min-height: 44px;
+        min-width: 44px;
+    }
+    
+    /* Mobile optimization: reduce motion for better performance */
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+}
+
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+
+    [data-debug-wrapper="true"] > * {
+        margin-left: inherit;
+        margin-right: inherit;
+        margin-top: inherit;
+        margin-bottom: inherit;
+        padding-left: inherit;
+        padding-right: inherit;
+        padding-top: inherit;
+        padding-bottom: inherit;
+        column-gap: inherit;
+        row-gap: inherit;
+        gap: inherit;
+        border-left-width: inherit;
+        border-right-width: inherit;
+        border-top-width: inherit;
+        border-bottom-width: inherit;
+        border-left-style: inherit;
+        border-right-style: inherit;
+        border-top-style: inherit;
+        border-bottom-style: inherit;
+        border-left-color: inherit;
+        border-right-color: inherit;
+        border-top-color: inherit;
+        border-bottom-color: inherit;
+    }
+}
+
+/* Reading Mode Styles - Mobile First */
+.reading-mode {
+    font-family: 'Lora', serif;
+    font-size: 17px; /* Mobile optimized */
+    line-height: 1.7;
+    color: #2C2A27;
+}
+
+@media (min-width: 768px) {
+    .reading-mode {
+        font-size: 18px;
+        line-height: 1.8;
+    }
+}
+
+/* Subtle paper texture overlay */
+.paper-texture {
+    position: relative;
+}
+
+.paper-texture::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+}
+
+/* Button styles - Mobile First with larger touch targets */
+.btn-paper {
+    @apply border border-[#E8E3D9] bg-white text-[#2C2A27] px-5 py-3 rounded-md;
+    @apply active:bg-[#F8F6F1] active:border-[#A68A64];
+    transition: background-color 0.2s, border-color 0.2s;
+    font-size: 15px;
+    font-weight: 500;
+    min-height: 48px;
+}
+
+/* Hover only on desktop */
+@media (hover: hover) {
+    .btn-paper:hover {
+        @apply bg-[#F8F6F1] border-[#A68A64];
+    }
+}
+
+.btn-paper-accent {
+    @apply bg-[#A68A64] text-white px-5 py-3 rounded-md border border-[#A68A64];
+    @apply active:bg-[#8F7556];
+    transition: background-color 0.2s;
+    font-size: 15px;
+    font-weight: 500;
+    min-height: 48px;
+}
+
+@media (hover: hover) {
+    .btn-paper-accent:hover {
+        @apply bg-[#8F7556];
+    }
+}
+
+/* Card styles - Mobile optimized */
+.card-paper {
+    @apply bg-white border border-[#E8E3D9] rounded-lg;
+    box-shadow: 0 1px 3px rgba(44, 42, 39, 0.05);
+}
+
+/* Smooth transitions for interactive elements - reduced for mobile performance */
+button, a {
+    transition: opacity 0.15s, background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+input, select, textarea {
+    transition: border-color 0.15s;
+}
+
+/* Active states for better mobile feedback */
+button:active, a:active {
+    transform: scale(0.98);
+    opacity: 0.9;
+}
+
+/* Mobile: prevent text selection on buttons */
+button {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* Mobile: optimize dialog/modal presentation */
+@media (max-width: 640px) {
+    [role="dialog"] {
+        max-width: 100% !important;
+        margin: 0 !important;
+        border-radius: 16px 16px 0 0 !important;
+    }
+}
+
+/* Hide scrollbar but keep functionality */
+.hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}

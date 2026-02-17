@@ -1,0 +1,15 @@
+/* App container - no center align */
+.App {
+  min-height: 100vh;
+  background-color: #F8F6F1;
+}
+
+/* Remove default margins and ensure consistent layout */
+* {
+  box-sizing: border-box;
+}
+
+/* Ensure no global text-align center */
+body, #root, .App {
+  text-align: left;
+}
