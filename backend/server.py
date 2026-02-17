@@ -67,9 +67,22 @@ class Book(BaseModel):
 class BookCreate(BaseModel):
     title: str
     author: str
-    genre: str
+    genre: Optional[str] = "General"
     cover_url: Optional[str] = None
+    description: Optional[str] = None
+    page_count: Optional[int] = None
     status: str = "want_to_read"
+    google_books_id: Optional[str] = None
+
+class BookDiscovery(BaseModel):
+    id: str
+    title: str
+    authors: List[str]
+    description: Optional[str] = None
+    cover_url: Optional[str] = None
+    page_count: Optional[int] = None
+    categories: List[str]
+    published_date: Optional[str] = None
 
 class BookUpdate(BaseModel):
     title: Optional[str] = None
@@ -421,9 +434,12 @@ async def create_book(book_data: BookCreate, request: Request, session_token: Op
         "user_id": user["user_id"],
         "title": book_data.title,
         "author": book_data.author,
-        "genre": book_data.genre,
+        "genre": book_data.genre or "General",
         "cover_url": book_data.cover_url,
+        "description": book_data.description,
+        "page_count": book_data.page_count,
         "status": book_data.status,
+        "google_books_id": book_data.google_books_id,
         "total_minutes": 0,
         "total_sessions": 0,
         "created_at": datetime.now(timezone.utc)
@@ -431,6 +447,54 @@ async def create_book(book_data: BookCreate, request: Request, session_token: Op
     
     await db.books.insert_one(new_book)
     return Book(**new_book)
+
+@api_router.get("/books/search", response_model=List[BookDiscovery])
+async def search_books(q: str):
+    """Search for books using Google Books API"""
+    if not q:
+        return []
+        
+    try:
+        url = f"https://www.googleapis.com/books/v1/volumes?q={q}&maxResults=10"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        results = []
+        for item in data.get("items", []):
+            info = item.get("volumeInfo", {})
+            
+            # Sanitization logic
+            description = info.get("description", "")
+            if description:
+                # Basic HTML strip
+                import re
+                description = re.sub('<[^<]+?>', '', description)
+            
+            # Best possible image
+            images = info.get("imageLinks", {})
+            cover_url = images.get("extraLarge") or images.get("large") or images.get("thumbnail")
+            
+            # Switch http to https for covers to avoid mixed content errors
+            if cover_url and cover_url.startswith("http://"):
+                cover_url = cover_url.replace("http://", "https://")
+            
+            results.append({
+                "id": item.get("id"),
+                "title": info.get("title", "Unknown Title"),
+                "authors": info.get("authors", ["Unknown Author"]),
+                "description": description[:500] if description else None,
+                "cover_url": cover_url,
+                "page_count": info.get("pageCount"),
+                "categories": info.get("categories", ["General"]),
+                "published_date": info.get("publishedDate")
+            })
+            
+        return results
+    except Exception as e:
+        import traceback
+        logging.error(f"Google Books API error: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch books: {str(e)}")
 
 @api_router.get("/books/{book_id}", response_model=Book)
 async def get_book(book_id: str, request: Request, session_token: Optional[str] = Cookie(None)):

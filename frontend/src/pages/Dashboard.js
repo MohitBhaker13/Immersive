@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import Navigation from '@/components/Navigation';
 import api from '@/lib/api';
 import { toast } from 'sonner';
-import { BookOpen, Play, Plus, Flame, Calendar as CalendarIcon } from 'lucide-react';
+import { BookOpen, Play, Plus, Flame, Calendar as CalendarIcon, Search, Loader2 } from 'lucide-react';
+import BookSearchItem from '@/components/BookSearchItem';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MOOD_OPTIONS, GENRE_OPTIONS, SOUND_THEMES, GENRE_TO_THEME } from '@/utils/constants';
+import { GENRE_OPTIONS, GENRE_TO_THEME } from '@/utils/constants';
 
 const Dashboard = ({ user }) => {
   const navigate = useNavigate();
@@ -23,12 +24,25 @@ const Dashboard = ({ user }) => {
     sound_theme: 'Focus',
     duration_minutes: user?.daily_goal_minutes || 30,
   });
-  const [newBookForm, setNewBookForm] = useState({
-    title: '',
-    author: '',
-    genre: 'Fiction',
-    status: 'currently_reading',
-  });
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showBookDetail, setShowBookDetail] = useState(false);
+  const [selectedSearchBook, setSelectedSearchBook] = useState(null);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.length > 2) {
+        handleSearch(searchQuery);
+      } else {
+        setSearchResults([]);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     loadDashboardData();
@@ -77,7 +91,7 @@ const Dashboard = ({ user }) => {
       const theme = GENRE_TO_THEME[selectedBook.genre] || 'Focus';
       const response = await api.post('/sessions', {
         book_id: selectedBook.book_id,
-        mood: selectedBook.genre, // Automatically use genre as mood label
+        mood: selectedBook.genre,
         sound_theme: theme,
         duration_minutes: sessionForm.duration_minutes,
       });
@@ -89,14 +103,39 @@ const Dashboard = ({ user }) => {
     }
   };
 
-  const handleCreateBook = async (e) => {
-    e.preventDefault();
-
+  const handleSearch = async (query) => {
+    setIsSearching(true);
     try {
-      await api.post('/books', newBookForm);
-      toast.success('Book added!');
+      const response = await api.get(`/books/search?q=${encodeURIComponent(query)}`);
+      setSearchResults(response.data);
+    } catch (error) {
+      console.error('Search failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSelectBook = (book) => {
+    setSelectedSearchBook(book);
+    setShowBookDetail(true);
+  };
+
+  const handleCreateBook = async () => {
+    try {
+      await api.post('/books', {
+        title: selectedSearchBook.title,
+        author: selectedSearchBook.authors.join(', '),
+        genre: selectedSearchBook.categories[0] || 'Fiction',
+        cover_url: selectedSearchBook.cover_url,
+        description: selectedSearchBook.description,
+        page_count: selectedSearchBook.page_count,
+        status: 'currently_reading'
+      });
+      toast.success('Book added to library!');
+      setShowBookDetail(false);
       setShowNewBook(false);
-      setNewBookForm({ title: '', author: '', genre: 'Fiction', status: 'currently_reading' });
+      setSearchQuery('');
+      setSearchResults([]);
       loadDashboardData();
     } catch (error) {
       console.error('Failed to create book:', error);
@@ -113,7 +152,6 @@ const Dashboard = ({ user }) => {
     setShowNewSession(true);
   };
 
-  // Get week dates for calendar strip
   const getWeekDates = () => {
     const today = new Date();
     const week = [];
@@ -150,20 +188,13 @@ const Dashboard = ({ user }) => {
       <Navigation currentPage="dashboard" />
 
       <div className="max-w-[720px] mx-auto px-4 md:px-8 py-6 md:py-12">
-        {/* Greeting */}
         <div className="mb-8 md:mb-12">
-          <h1
-            className="text-3xl md:text-5xl font-bold text-[#2C2A27] mb-2"
-            style={{ fontFamily: 'Playfair Display, serif' }}
-          >
+          <h1 className="text-3xl md:text-5xl font-bold text-[#2C2A27] mb-2" style={{ fontFamily: 'Playfair Display, serif' }}>
             Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}
           </h1>
-          <p className="text-[#6A645C] text-base md:text-lg" style={{ fontFamily: 'Lora, serif' }}>
-            Ready to immerse yourself?
-          </p>
+          <p className="text-[#6A645C] text-base md:text-lg" style={{ fontFamily: 'Lora, serif' }}>Ready to immerse yourself?</p>
         </div>
 
-        {/* Streak & Week Calendar */}
         <div className="mb-8 md:mb-12 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
             <Flame className="w-6 h-6 text-[#A68A64]" />
@@ -175,21 +206,12 @@ const Dashboard = ({ user }) => {
             </div>
           </div>
 
-          {/* Week Strip - Scrollable on mobile */}
           <div className="flex space-x-2 overflow-x-auto hide-scrollbar w-full md:w-auto">
             {getWeekDates().map((date, i) => {
               const isToday = date.toDateString() === new Date().toDateString();
               const hasSession = hasSessionOnDate(date);
               return (
-                <div
-                  key={i}
-                  className={`min-w-[44px] h-[44px] rounded-md flex flex-col items-center justify-center text-xs border ${hasSession
-                    ? 'bg-[#A68A64] text-white border-[#A68A64]'
-                    : isToday
-                      ? 'bg-white text-[#2C2A27] border-[#A68A64]'
-                      : 'bg-white text-[#9B948B] border-[#E8E3D9]'
-                    }`}
-                >
+                <div key={i} className={`min-w-[44px] h-[44px] rounded-md flex flex-col items-center justify-center text-xs border ${hasSession ? 'bg-[#A68A64] text-white border-[#A68A64]' : isToday ? 'bg-white text-[#2C2A27] border-[#A68A64]' : 'bg-white text-[#9B948B] border-[#E8E3D9]'}`}>
                   <div className="font-medium">{date.getDate()}</div>
                 </div>
               );
@@ -197,99 +219,57 @@ const Dashboard = ({ user }) => {
           </div>
         </div>
 
-        {/* Continue Reading Card */}
         {continueBook && (
           <div className="card-paper p-6 md:p-8 mb-6 md:mb-8">
             <div className="flex flex-col md:flex-row items-start md:justify-between gap-4">
               <div className="flex-1 w-full">
                 <div className="text-sm text-[#6A645C] mb-2">Continue Reading</div>
-                <h2
-                  className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-2"
-                  style={{ fontFamily: 'Playfair Display, serif' }}
-                >
-                  {continueBook.title}
-                </h2>
-                <p className="text-[#6A645C] mb-3 md:mb-4" style={{ fontFamily: 'Lora, serif' }}>
-                  by {continueBook.author}
-                </p>
+                <h2 className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-2" style={{ fontFamily: 'Playfair Display, serif' }}>{continueBook.title}</h2>
+                <p className="text-[#6A645C] mb-3 md:mb-4" style={{ fontFamily: 'Lora, serif' }}>by {continueBook.author}</p>
                 <div className="flex items-center space-x-4 text-sm text-[#9B948B] mb-4 md:mb-6">
                   <span>{continueBook.total_sessions} sessions</span>
                   <span>•</span>
                   <span>{continueBook.total_minutes} minutes</span>
                 </div>
-                <button
-                  data-testid="continue-reading-btn"
-                  onClick={handleContinueReading}
-                  className="btn-paper-accent flex items-center justify-center space-x-2 w-full md:w-auto"
-                >
+                <button onClick={handleContinueReading} className="btn-paper-accent flex items-center justify-center space-x-2 w-full md:w-auto">
                   <Play className="w-4 h-4" />
                   <span>Continue</span>
                 </button>
               </div>
               {continueBook.cover_url && (
-                <img
-                  src={continueBook.cover_url}
-                  alt={continueBook.title}
-                  className="w-20 h-28 md:w-24 md:h-32 object-cover rounded-md border border-[#E8E3D9] self-center md:self-start"
-                />
+                <img src={continueBook.cover_url} alt={continueBook.title} className="w-20 h-28 md:w-24 md:h-32 object-cover rounded-md border border-[#E8E3D9] self-center md:self-start" />
               )}
             </div>
           </div>
         )}
 
-        {/* Start New Session */}
         <div className="card-paper p-6 md:p-8 mb-6 md:mb-8">
-          <h3
-            className="text-xl md:text-2xl font-bold text-[#2C2A27] mb-3 md:mb-4"
-            style={{ fontFamily: 'Playfair Display, serif' }}
-          >
-            Start New Session
-          </h3>
-          <p className="text-[#6A645C] mb-4 md:mb-6" style={{ fontFamily: 'Lora, serif' }}>
-            Choose a book and set the mood
-          </p>
+          <h3 className="text-xl md:text-2xl font-bold text-[#2C2A27] mb-3 md:mb-4" style={{ fontFamily: 'Playfair Display, serif' }}>Start New Session</h3>
+          <p className="text-[#6A645C] mb-4 md:mb-6" style={{ fontFamily: 'Lora, serif' }}>Choose a book and set the mood</p>
           <div className="flex flex-col md:flex-row gap-3 md:space-x-4">
-            <button
-              data-testid="new-session-btn"
-              onClick={() => setShowNewSession(true)}
-              className="btn-paper flex items-center justify-center space-x-2 w-full md:w-auto"
-            >
+            <button onClick={() => setShowNewSession(true)} className="btn-paper flex items-center justify-center space-x-2 w-full md:w-auto">
               <BookOpen className="w-4 h-4" />
               <span>Choose Book</span>
             </button>
-            <button
-              data-testid="add-book-btn"
-              onClick={() => setShowNewBook(true)}
-              className="btn-paper flex items-center justify-center space-x-2 w-full md:w-auto"
-            >
+            <button onClick={() => setShowNewBook(true)} className="btn-paper flex items-center justify-center space-x-2 w-full md:w-auto">
               <Plus className="w-4 h-4" />
               <span>Add Book</span>
             </button>
           </div>
         </div>
 
-        {/* Quick Stats */}
         <div className="grid grid-cols-2 gap-4 md:gap-6 mb-6">
           <div className="card-paper p-5 md:p-6">
-            <div className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>
-              {books.length}
-            </div>
+            <div className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>{books.length}</div>
             <div className="text-[#6A645C] text-sm">Books in library</div>
           </div>
           <div className="card-paper p-5 md:p-6">
-            <div className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>
-              {sessions.length}
-            </div>
+            <div className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>{sessions.length}</div>
             <div className="text-[#6A645C] text-sm">Total sessions</div>
           </div>
         </div>
 
-        {/* Quick Calendar Access */}
-        <button
-          data-testid="view-calendar-btn"
-          onClick={() => navigate('/calendar')}
-          className="w-full card-paper p-5 md:p-6 flex items-center justify-between active:border-[#A68A64] transition-colors"
-        >
+        <button onClick={() => navigate('/calendar')} className="w-full card-paper p-5 md:p-6 flex items-center justify-between active:border-[#A68A64] transition-colors">
           <div className="flex items-center space-x-3">
             <CalendarIcon className="w-5 h-5 text-[#A68A64]" />
             <span className="text-[#2C2A27] font-medium">View Full Calendar</span>
@@ -298,129 +278,123 @@ const Dashboard = ({ user }) => {
         </button>
       </div>
 
-      {/* New Session Dialog */}
       <Dialog open={showNewSession} onOpenChange={setShowNewSession}>
-        <DialogContent className="bg-white border-[#E8E3D9]" aria-describedby="session-dialog-description">
+        <DialogContent className="bg-white border-[#E8E3D9]">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: 'Playfair Display, serif' }}>Start Reading Session</DialogTitle>
           </DialogHeader>
-          <p id="session-dialog-description" className="sr-only">Choose a book, mood, and duration for your reading session</p>
           <div className="space-y-4 mt-4">
             <div>
               <Label className="text-[#2C2A27]">Book</Label>
-              <Select
-                value={selectedBook?.book_id}
-                onValueChange={(val) => setSelectedBook(books.find((b) => b.book_id === val))}
-              >
-                <SelectTrigger data-testid="book-select">
-                  <SelectValue placeholder="Select a book" />
-                </SelectTrigger>
+              <Select value={selectedBook?.book_id} onValueChange={(val) => setSelectedBook(books.find((b) => b.book_id === val))}>
+                <SelectTrigger><SelectValue placeholder="Select a book" /></SelectTrigger>
                 <SelectContent>
                   {currentlyReading.map((book) => (
-                    <SelectItem key={book.book_id} value={book.book_id}>
-                      {book.title}
-                    </SelectItem>
+                    <SelectItem key={book.book_id} value={book.book_id}>{book.title}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
             <div>
               <Label className="text-[#2C2A27]">Atmosphere</Label>
               <div className="p-3 bg-[#FBFBFB] border border-[#E8E3D9] rounded-md text-[#6A645C] text-sm italic">
-                {selectedBook
-                  ? `${selectedBook.genre} (Automatically matched)`
-                  : 'Select a book to set atmosphere'}
+                {selectedBook ? `${selectedBook.genre} (Auto-matched)` : 'Select a book to set atmosphere'}
               </div>
             </div>
-
             <div>
               <Label className="text-[#2C2A27]">Duration (minutes)</Label>
-              <Select
-                value={sessionForm.duration_minutes.toString()}
-                onValueChange={(val) => setSessionForm({ ...sessionForm, duration_minutes: parseInt(val) })}
-              >
-                <SelectTrigger data-testid="duration-select">
-                  <SelectValue />
-                </SelectTrigger>
+              <Select value={sessionForm.duration_minutes.toString()} onValueChange={(val) => setSessionForm({ ...sessionForm, duration_minutes: parseInt(val) })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {[15, 30, 45, 60, 90, 120].map((min) => (
-                    <SelectItem key={min} value={min.toString()}>
-                      {min} minutes
-                    </SelectItem>
+                    <SelectItem key={min} value={min.toString()}>{min} minutes</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
-            <button
-              data-testid="start-session-btn"
-              onClick={handleStartSession}
-              className="w-full btn-paper-accent py-3"
-            >
-              Start Session
-            </button>
+            <button onClick={handleStartSession} className="w-full btn-paper-accent py-3">Start Session</button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Add Book Dialog */}
-      <Dialog open={showNewBook} onOpenChange={setShowNewBook}>
-        <DialogContent className="bg-white border-[#E8E3D9]" aria-describedby="book-dialog-description">
-          <DialogHeader>
-            <DialogTitle style={{ fontFamily: 'Playfair Display, serif' }}>Add New Book</DialogTitle>
-          </DialogHeader>
-          <p id="book-dialog-description" className="sr-only">Add a new book to your library</p>
-          <form onSubmit={handleCreateBook} className="space-y-4 mt-4">
-            <div>
-              <Label className="text-[#2C2A27]">Title</Label>
+      <Dialog open={showNewBook} onOpenChange={(open) => {
+        setShowNewBook(open);
+        if (!open) { setSearchQuery(''); setSearchResults([]); }
+      }}>
+        <DialogContent className="bg-white border-[#E8E3D9] max-w-lg p-0 overflow-hidden">
+          <div className="p-6 border-b border-[#E8E3D9]">
+            <DialogTitle style={{ fontFamily: 'Playfair Display, serif' }} className="text-2xl">Find your next book</DialogTitle>
+            <p className="text-[#6A645C] text-sm mt-1">Search millions of books to add to your library</p>
+            <div className="mt-4 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9B948B]" />
               <Input
-                data-testid="book-title-input"
-                value={newBookForm.title}
-                onChange={(e) => setNewBookForm({ ...newBookForm, title: e.target.value })}
-                required
-                className="bg-white border-[#E8E3D9]"
+                placeholder="Title, author, or ISBN..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 bg-[#F8F6F1] border-[#E8E3D9] h-12 text-base"
+                autoFocus
               />
+              {isSearching && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#A68A64]" />
+                </div>
+              )}
             </div>
+          </div>
 
-            <div>
-              <Label className="text-[#2C2A27]">Author</Label>
-              <Input
-                data-testid="book-author-input"
-                value={newBookForm.author}
-                onChange={(e) => setNewBookForm({ ...newBookForm, author: e.target.value })}
-                required
-                className="bg-white border-[#E8E3D9]"
-              />
+          <div className="max-h-[60vh] overflow-y-auto p-2 min-h-[200px]">
+            {isSearching ? (
+              <div className="space-y-4 p-4 text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-[#A68A64] mx-auto mb-2" />
+                <p className="text-sm text-[#9B948B]">Searching Google Books...</p>
+              </div>
+            ) : searchResults.length > 0 ? (
+              <div className="space-y-1">
+                {searchResults.map((book) => (
+                  <BookSearchItem key={book.id} book={book} onSelect={handleSelectBook} onInfo={handleSelectBook} />
+                ))}
+              </div>
+            ) : searchQuery.length > 2 && !isSearching ? (
+              <div className="py-12 text-center text-[#9B948B]">No books found for "{searchQuery}"</div>
+            ) : (
+              <div className="py-12 text-center">
+                <BookOpen className="w-8 h-8 text-[#E8E3D9] mx-auto mb-3" />
+                <p className="text-[#9B948B] text-sm italic">"A room without books is like a body without a soul."</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBookDetail} onOpenChange={setShowBookDetail}>
+        <DialogContent className="bg-white border-[#E8E3D9] max-w-md">
+          {selectedSearchBook && (
+            <div className="space-y-6">
+              <div className="flex gap-4">
+                <div className="w-24 h-36 flex-shrink-0 bg-[#E8E3D9] rounded shadow-md overflow-hidden">
+                  {selectedSearchBook.cover_url && <img src={selectedSearchBook.cover_url} alt={selectedSearchBook.title} className="w-full h-full object-cover" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <DialogTitle style={{ fontFamily: 'Playfair Display, serif' }} className="text-xl leading-tight">{selectedSearchBook.title}</DialogTitle>
+                  <p className="text-[#6A645C] mt-1 italic">{selectedSearchBook.authors.join(', ')}</p>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {selectedSearchBook.categories.map(cat => (
+                      <span key={cat} className="text-[10px] uppercase tracking-wider bg-[#F4F1EA] text-[#A68A64] px-2 py-1 rounded">{cat}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-[#2C2A27] mb-1 uppercase tracking-tighter">About</h4>
+                <p className="text-sm text-[#6A645C] line-clamp-4 leading-relaxed">{selectedSearchBook.description || "No description available."}</p>
+                {selectedSearchBook.page_count && <p className="text-xs text-[#9B948B] mt-2">{selectedSearchBook.page_count} pages</p>}
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setShowBookDetail(false)} className="flex-1 btn-paper">Cancel</button>
+                <button onClick={handleCreateBook} className="flex-[2] btn-paper-accent py-3 font-semibold">Add to Library</button>
+              </div>
             </div>
-
-            <div>
-              <Label className="text-[#2C2A27]">Genre</Label>
-              <Select
-                value={newBookForm.genre}
-                onValueChange={(val) => setNewBookForm({ ...newBookForm, genre: val })}
-              >
-                <SelectTrigger data-testid="book-genre-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GENRE_OPTIONS.map((genre) => (
-                    <SelectItem key={genre} value={genre}>
-                      {genre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <button
-              type="submit"
-              data-testid="save-book-btn"
-              className="w-full btn-paper-accent py-3"
-            >
-              Add Book
-            </button>
-          </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>
