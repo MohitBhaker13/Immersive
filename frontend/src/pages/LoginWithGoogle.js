@@ -11,6 +11,27 @@ const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 const LoginWithGoogle = () => {
   const navigate = useNavigate();
 
+  const handleGoogleCallback = useCallback(async (response) => {
+    try {
+      // Send Google ID token to backend
+      const result = await api.post('/auth/google', {
+        credential: response.credential,
+      });
+
+      const user = result.data;
+
+      // Check if onboarding is needed
+      if (!user.reading_type) {
+        navigate('/onboarding', { state: { user } });
+      } else {
+        navigate('/dashboard', { state: { user } });
+      }
+    } catch (error) {
+      console.error('Google login error:', error);
+      toast.error('Failed to sign in with Google');
+    }
+  }, [navigate]);
+
   useEffect(() => {
     // Check if already authenticated
     const checkAuth = async () => {
@@ -62,27 +83,6 @@ const LoginWithGoogle = () => {
       };
     }
   }, [navigate, handleGoogleCallback]);
-
-  const handleGoogleCallback = useCallback(async (response) => {
-    try {
-      // Send Google ID token to backend
-      const result = await api.post('/auth/google', {
-        credential: response.credential,
-      });
-
-      const user = result.data;
-
-      // Check if onboarding is needed
-      if (!user.reading_type) {
-        navigate('/onboarding', { state: { user } });
-      } else {
-        navigate('/dashboard', { state: { user } });
-      }
-    } catch (error) {
-      console.error('Google login error:', error);
-      toast.error('Failed to sign in with Google');
-    }
-  }, [navigate]);
 
   const handleEmergentLogin = () => {
     // Use Emergent managed auth

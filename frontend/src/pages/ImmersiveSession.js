@@ -23,13 +23,17 @@ const ImmersiveSession = () => {
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const timerRef = useRef(null);
 
-  useEffect(() => {
-    loadSession();
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      audioManager.cleanup();
-    };
-  }, [sessionId, loadSession]);
+  const startTimer = useCallback(() => {
+    timerRef.current = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev <= 1) {
+          handleComplete();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [handleComplete]);
 
   const loadSession = useCallback(async () => {
     try {
@@ -69,28 +73,13 @@ const ImmersiveSession = () => {
     }
   }, [sessionId, navigate, startTimer]);
 
-  const toggleSound = () => {
-    const newMutedState = audioManager.toggleMute();
-    setSoundEnabled(!newMutedState);
-  };
-
-  const handleVolumeChange = (newVolume) => {
-    const vol = newVolume[0] / 100; // Convert 0-100 to 0-1
-    setVolume(vol);
-    audioManager.setVolume(vol);
-  };
-
-  const startTimer = () => {
-    timerRef.current = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          handleComplete();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
+  useEffect(() => {
+    loadSession();
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      audioManager.cleanup();
+    };
+  }, [sessionId, loadSession]);
 
   const handleComplete = async () => {
     if (timerRef.current) clearInterval(timerRef.current);
