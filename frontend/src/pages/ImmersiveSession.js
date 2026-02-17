@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
 import { toast } from 'sonner';
@@ -29,9 +29,9 @@ const ImmersiveSession = () => {
       if (timerRef.current) clearInterval(timerRef.current);
       audioManager.cleanup();
     };
-  }, [sessionId]);
+  }, [sessionId, loadSession]);
 
-  const loadSession = async () => {
+  const loadSession = useCallback(async () => {
     try {
       const [sessionRes, sessionsRes] = await Promise.all([
         api.get('/sessions'),
@@ -67,7 +67,7 @@ const ImmersiveSession = () => {
       toast.error('Failed to load session');
       navigate('/dashboard');
     }
-  };
+  }, [sessionId, navigate, startTimer]);
 
   const toggleSound = () => {
     const newMutedState = audioManager.toggleMute();

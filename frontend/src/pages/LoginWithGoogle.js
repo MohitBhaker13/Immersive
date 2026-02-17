@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen } from 'lucide-react';
 import api from '@/lib/api';
@@ -61,9 +61,9 @@ const LoginWithGoogle = () => {
         document.body.removeChild(script);
       };
     }
-  }, [navigate]);
+  }, [navigate, handleGoogleCallback]);
 
-  const handleGoogleCallback = async (response) => {
+  const handleGoogleCallback = useCallback(async (response) => {
     try {
       // Send Google ID token to backend
       const result = await api.post('/auth/google', {
@@ -82,7 +82,7 @@ const LoginWithGoogle = () => {
       console.error('Google login error:', error);
       toast.error('Failed to sign in with Google');
     }
-  };
+  }, [navigate]);
 
   const handleEmergentLogin = () => {
     // Use Emergent managed auth
@@ -96,7 +96,7 @@ const LoginWithGoogle = () => {
         <div className="card-paper p-8 md:p-12 text-center">
           <div className="mb-6 md:mb-8">
             <BookOpen className="w-14 h-14 md:w-16 md:h-16 mx-auto text-[#A68A64] mb-4" />
-            <h1 
+            <h1
               className="text-4xl md:text-5xl font-bold text-[#2C2A27] mb-3"
               style={{ fontFamily: 'Playfair Display, serif' }}
             >
@@ -106,7 +106,7 @@ const LoginWithGoogle = () => {
               Turn reading into an experience
             </p>
           </div>
-          
+
           <div className="space-y-4 mb-6 md:mb-8">
             <p className="text-[#2C2A27] leading-relaxed text-sm md:text-base" style={{ fontFamily: 'Lora, serif' }}>
               Create the perfect atmosphere for every book.
@@ -147,9 +147,9 @@ const LoginWithGoogle = () => {
               <strong>Want to use your own Google OAuth?</strong>
             </p>
             <p className="text-xs text-[#9B948B]" style={{ fontFamily: 'Inter, sans-serif' }}>
-              1. Follow <code>/app/MONGODB_GOOGLE_SETUP.md</code><br/>
-              2. Add <code>REACT_APP_USE_GOOGLE_OAUTH=true</code> to <code>/app/frontend/.env</code><br/>
-              3. Add <code>REACT_APP_GOOGLE_CLIENT_ID=your-client-id</code> to <code>/app/frontend/.env</code><br/>
+              1. Follow <code>/app/MONGODB_GOOGLE_SETUP.md</code><br />
+              2. Add <code>REACT_APP_USE_GOOGLE_OAUTH=true</code> to <code>/app/frontend/.env</code><br />
+              3. Add <code>REACT_APP_GOOGLE_CLIENT_ID=your-client-id</code> to <code>/app/frontend/.env</code><br />
               4. Restart frontend
             </p>
           </div>
