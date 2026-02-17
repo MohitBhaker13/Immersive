@@ -534,7 +534,19 @@ async def complete_session(session_id: str, completion: SessionComplete, request
         raise HTTPException(status_code=404, detail="Session not found")
     
     ended_at = datetime.now(timezone.utc)
-    actual_minutes = completion.actual_minutes if completion.actual_minutes is not None else session["duration_minutes"]
+    
+    # Calculate actual minutes spent from timestamps
+    started_at = session["started_at"]
+    if isinstance(started_at, str):
+        started_at = datetime.fromisoformat(started_at)
+    
+    # Calculate difference in minutes
+    time_diff = ended_at - started_at
+    actual_minutes = max(1, round(time_diff.total_seconds() / 60))
+    
+    # If client specifically sent a value (e.g. from a client-side timer), use the smaller one to be conservative
+    if completion.actual_minutes is not None:
+        actual_minutes = min(actual_minutes, completion.actual_minutes)
     
     # Update session
     await db.sessions.update_one(
@@ -693,15 +705,19 @@ async def get_calendar(request: Request, session_token: Optional[str] = Cookie(N
     # Get all completed sessions
     sessions = await db.sessions.find(
         {"user_id": user["user_id"], "ended_at": {"$ne": None}},
-        {"_id": 0, "started_at": 1, "duration_minutes": 1, "actual_minutes": 1}
+        {"_id": 0, "started_at": 1, "ended_at": 1, "duration_minutes": 1, "actual_minutes": 1}
     ).to_list(10000)
     
     # Aggregate by date
     calendar_data = {}
     for session in sessions:
         started_at = session.get("started_at")
+        ended_at = session.get("ended_at")
+        
         if isinstance(started_at, str):
             started_at = datetime.fromisoformat(started_at)
+        if isinstance(ended_at, str):
+            ended_at = datetime.fromisoformat(ended_at)
         
         date_key = started_at.date().isoformat()
         
@@ -710,12 +726,21 @@ async def get_calendar(request: Request, session_token: Optional[str] = Cookie(N
         
         calendar_data[date_key]["sessions"] += 1
         
-        # Use actual_minutes if available, fallback to duration_minutes
-        actual = session.get("actual_minutes")
-        if actual is None:
-            actual = session.get("duration_minutes", 0)
-        
-        calendar_data[date_key]["minutes"] += actual
+        # Calculate minutes spent from timestamps (most accurate)
+        if started_at and ended_at:
+            delta = ended_at - started_at
+            # Use actual_minutes field if it exists, otherwise use calculated delta
+            # Cap it at duration_minutes + 5 to avoid outliers if server was sleeping
+            calc_minutes = round(delta.total_seconds() / 60)
+            session_total = session.get("actual_minutes", calc_minutes)
+            
+            # Capping logic to ensure we don't over-report due to server time drift
+            planned = session.get("duration_minutes", 30)
+            actual = min(session_total, planned)
+            
+            calendar_data[date_key]["minutes"] += max(1, actual)
+        else:
+            calendar_data[date_key]["minutes"] += session.get("duration_minutes", 0)
     
     return calendar_data
 
