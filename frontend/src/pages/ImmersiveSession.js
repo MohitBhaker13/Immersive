@@ -21,7 +21,6 @@ const ImmersiveSession = () => {
   const [showNoteDialog, setShowNoteDialog] = useState(false);
   const [noteContent, setNoteContent] = useState('');
   const [showExitConfirm, setShowExitConfirm] = useState(false);
-  const timerRef = useRef(null);
   const sessionRef = useRef(null);
   const hasLoaded = useRef(false);
 
@@ -37,10 +36,6 @@ const ImmersiveSession = () => {
   }, []);
 
   const handleComplete = useCallback(async () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
     await audioManager.stop(1000);
 
     try {
@@ -55,27 +50,21 @@ const ImmersiveSession = () => {
     }
   }, [sessionId, navigate]);
 
-  // Separate effect for the actual timer ticker
+  // Ticker effect: robust pattern that satisfies ESLint and prevents jank
   useEffect(() => {
-    if (!session || timeRemaining <= 0) return;
+    if (!session) return;
 
-    if (!timerRef.current) {
-      timerRef.current = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            handleComplete();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+    if (timeRemaining <= 0) {
+      handleComplete();
+      return;
     }
 
-    return () => {
-      // We don't clear here to allow it to persist through small re-renders,
-      // only if the component unmounts or explicitly stopped.
-    };
-  }, [session, timeRemaining <= 0, handleComplete]);
+    const timer = setTimeout(() => {
+      setTimeRemaining((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [session, timeRemaining, handleComplete]);
 
   const loadSession = useCallback(async () => {
     if (hasLoaded.current) return;
@@ -117,7 +106,6 @@ const ImmersiveSession = () => {
   useEffect(() => {
     loadSession();
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
       audioManager.cleanup();
     };
   }, [sessionId, loadSession]);
@@ -138,10 +126,6 @@ const ImmersiveSession = () => {
   }, []);
 
   const confirmExit = useCallback(async () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
     await audioManager.stop(500); // Quick fade out
 
     const minutesSpent = Math.ceil((sessionRef.current?.duration_minutes * 60 - timeRemaining) / 60);
