@@ -1,31 +1,33 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, Headphones, Flame, Sparkles } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
-// Check if Google OAuth is configured (you set this in your .env)
+// Check if Google OAuth is configured
 const USE_GOOGLE_OAUTH = process.env.REACT_APP_USE_GOOGLE_OAUTH === 'true';
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
 const LoginWithGoogle = () => {
   const navigate = useNavigate();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleGoogleCallback = useCallback(async (response) => {
     try {
-      // Send Google ID token to backend
       const result = await api.post('/auth/google', {
         credential: response.credential,
       });
 
       const { user, session_token } = result.data;
 
-      // Store token for mobile fallback
       if (session_token) {
         localStorage.setItem('session_token', session_token);
       }
 
-      // Check if onboarding is needed
       if (!user.reading_type) {
         navigate('/onboarding', { state: { user } });
       } else {
@@ -38,7 +40,6 @@ const LoginWithGoogle = () => {
   }, [navigate]);
 
   useEffect(() => {
-    // Check if already authenticated
     const checkAuth = async () => {
       try {
         const response = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/auth/me`, {
@@ -47,13 +48,10 @@ const LoginWithGoogle = () => {
         if (response.ok) {
           window.location.href = '/dashboard';
         }
-      } catch (error) {
-        // Not authenticated, stay on login page
-      }
+      } catch (error) { }
     };
     checkAuth();
 
-    // Load Google Sign-In script if using Google OAuth
     if (USE_GOOGLE_OAUTH && GOOGLE_CLIENT_ID) {
       const script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
@@ -62,14 +60,12 @@ const LoginWithGoogle = () => {
       document.body.appendChild(script);
 
       script.onload = () => {
-        // Initialize Google Sign-In
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: handleGoogleCallback,
           auto_select: false,
         });
 
-        // Render the button
         window.google.accounts.id.renderButton(
           document.getElementById('google-signin-button'),
           {
@@ -78,7 +74,7 @@ const LoginWithGoogle = () => {
             text: 'continue_with',
             shape: 'rectangular',
             logo_alignment: 'left',
-            width: 400,
+            width: '100%',
           }
         );
       };
@@ -90,72 +86,97 @@ const LoginWithGoogle = () => {
   }, [navigate, handleGoogleCallback]);
 
   const handleEmergentLogin = () => {
-    // Use Emergent managed auth
     const redirectUrl = window.location.origin + '/dashboard';
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
+  const features = [
+    { icon: Headphones, label: 'Ambience', desc: 'Curated soundscapes', delay: '100ms' },
+    { icon: Flame, label: 'Streaks', desc: 'Track your consistency', delay: '200ms' },
+    { icon: Sparkles, label: 'Focus', desc: 'Distraction-free mode', delay: '300ms' },
+  ];
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8F6F1] paper-texture px-4">
-      <div className="max-w-md w-full">
-        <div className="card-paper p-8 md:p-12 text-center">
-          <div className="mb-6 md:mb-8">
-            <BookOpen className="w-14 h-14 md:w-16 md:h-16 mx-auto text-[#A68A64] mb-4" />
-            <h1
-              className="text-4xl md:text-5xl font-bold text-[#2C2A27] mb-3"
-              style={{ fontFamily: 'Playfair Display, serif' }}
+    <div className="min-h-screen relative overflow-hidden bg-[#F8F6F1] flex flex-col items-center justify-center p-4 md:p-6">
+      {/* Background Ambience */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#A68A64] opacity-5 rounded-full blur-3xl transform transition-transform duration-[20s] ease-in-out ${mounted ? 'translate-x-10 translate-y-10 scale-110' : ''}`} />
+        <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#2C2A27] opacity-5 rounded-full blur-3xl transform transition-transform duration-[25s] ease-in-out ${mounted ? '-translate-x-10 -translate-y-10 scale-105' : ''}`} />
+      </div>
+
+      <div className="w-full max-w-md relative z-10 flex flex-col gap-6">
+
+        {/* Hero Card */}
+        <div className="card-paper p-8 md:p-10 text-center shadow-xl animate-in fade-in slide-in-from-bottom-8 duration-1000">
+          <div className="relative mb-6 inline-block">
+            <BookOpen className="relative w-16 h-16 mx-auto text-[#A68A64] drop-shadow-sm" />
+          </div>
+
+          <h1 className="text-4xl md:text-5xl font-bold text-[#2C2A27] mb-3 tracking-tight" style={{ fontFamily: 'Playfair Display, serif' }}>
+            Immersive
+          </h1>
+          <p className="text-[#6A645C] text-lg font-medium" style={{ fontFamily: 'Lora, serif' }}>
+            Your portal to deep reading.
+          </p>
+        </div>
+
+        {/* Value Prop Cards - Staggered Grid */}
+        <div className="grid grid-cols-3 gap-3 md:gap-4">
+          {features.map((f, i) => (
+            <div
+              key={i}
+              className="bg-white/80 backdrop-blur-sm border border-[#E8E3D9] rounded-xl p-3 md:p-4 text-center shadow-sm animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-backwards"
+              style={{ animationDelay: f.delay }}
             >
-              Immersive
-            </h1>
-            <p className="text-[#6A645C] text-base md:text-lg" style={{ fontFamily: 'Lora, serif' }}>
-              Turn reading into an experience
-            </p>
-          </div>
+              <f.icon className="w-6 h-6 mx-auto text-[#A68A64] mb-2" />
+              <div className="font-bold text-[#2C2A27] text-xs md:text-sm uppercase tracking-wide mb-0.5">{f.label}</div>
+              <div className="text-[10px] md:text-xs text-[#9B948B] leading-tight hidden md:block">{f.desc}</div>
+            </div>
+          ))}
+        </div>
 
-          <div className="space-y-4 mb-6 md:mb-8">
-            <p className="text-[#2C2A27] leading-relaxed text-sm md:text-base" style={{ fontFamily: 'Lora, serif' }}>
-              Create the perfect atmosphere for every book.
-              Track your journey. Build your streak.
-            </p>
-          </div>
-
+        {/* Login Action Card */}
+        <div className="card-paper p-6 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-500 shadow-lg mt-2">
           {USE_GOOGLE_OAUTH && GOOGLE_CLIENT_ID ? (
-            // Standard Google OAuth Button
-            <div className="flex flex-col items-center space-y-4">
-              <div id="google-signin-button" data-testid="google-login-btn"></div>
-              <p className="text-xs text-[#9B948B]" style={{ fontFamily: 'Inter, sans-serif' }}>
-                Sign in with your Google account
+            <div className="flex flex-col items-center space-y-4 w-full">
+              <div id="google-signin-button" className="w-full flex justify-center" data-testid="google-login-btn"></div>
+              <p className="text-xs text-[#9B948B] font-medium tracking-wide items-center flex gap-2">
+                <span className="w-8 h-[1px] bg-[#E8E3D9]"></span>
+                BEGIN YOUR JOURNEY
+                <span className="w-8 h-[1px] bg-[#E8E3D9]"></span>
               </p>
             </div>
           ) : (
-            // Emergent Managed Auth Button (Fallback)
             <div>
               <button
                 data-testid="google-login-btn"
                 onClick={handleEmergentLogin}
-                className="w-full btn-paper-accent text-base py-3"
+                className="w-full btn-paper-accent text-base py-3.5 shadow-md group relative overflow-hidden"
                 style={{ fontFamily: 'Inter, sans-serif' }}
               >
-                Continue with Google
+                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                <span className="relative flex items-center justify-center gap-2">
+                  Continue with Google
+                </span>
               </button>
-              <p className="text-xs text-[#9B948B] mt-3" style={{ fontFamily: 'Inter, sans-serif' }}>
-                Using Emergent managed authentication
+              <p className="text-[10px] text-[#9B948B] mt-3 text-center uppercase tracking-widest opacity-60">
+                Powered by Emergent Auth
               </p>
             </div>
           )}
         </div>
 
-        {/* Setup Instructions */}
+        {/* Footer/Version */}
+        <div className="text-center animate-in fade-in duration-1000 delay-700">
+          <p className="text-[10px] text-[#A68A64]/60 uppercase tracking-widest">v1.0 • Crafted for Readers</p>
+        </div>
+
+        {/* Setup Instructions (Dev Only) */}
         {!USE_GOOGLE_OAUTH && (
-          <div className="mt-6 p-4 bg-white border border-[#E8E3D9] rounded-lg">
-            <p className="text-sm text-[#6A645C] mb-2" style={{ fontFamily: 'Inter, sans-serif' }}>
-              <strong>Want to use your own Google OAuth?</strong>
-            </p>
-            <p className="text-xs text-[#9B948B]" style={{ fontFamily: 'Inter, sans-serif' }}>
-              1. Follow <code>/app/MONGODB_GOOGLE_SETUP.md</code><br />
-              2. Add <code>REACT_APP_USE_GOOGLE_OAUTH=true</code> to <code>/app/frontend/.env</code><br />
-              3. Add <code>REACT_APP_GOOGLE_CLIENT_ID=your-client-id</code> to <code>/app/frontend/.env</code><br />
-              4. Restart frontend
+          <div className="mt-4 p-4 bg-white/50 border border-[#E8E3D9] rounded-lg text-left backdrop-blur-sm animate-in fade-in duration-500 delay-1000 hidden md:block">
+            <p className="text-xs text-[#6A645C] mb-1 font-bold">Dev Setup:</p>
+            <p className="text-[10px] text-[#9B948B] font-mono leading-relaxed">
+              To use your own Google OAuth, check <code>/app/MONGODB_GOOGLE_SETUP.md</code> and update <code>.env</code>.
             </p>
           </div>
         )}

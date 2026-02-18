@@ -221,6 +221,11 @@ button {
     scrollbar-width: none;
 }
 
+/* Animation utilities */
+.fill-mode-backwards {
+    animation-fill-mode: backwards;
+}
+
 .hide-scrollbar::-webkit-scrollbar {
     display: none;
 }

@@ -3,6 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { BookOpen, Calendar as CalendarIcon, Library as LibraryIcon, LogOut } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const Navigation = ({ currentPage = 'dashboard' }) => {
   const navigate = useNavigate();
@@ -24,6 +32,12 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
     { id: 'calendar', label: 'Calendar', icon: CalendarIcon, path: '/calendar' },
   ];
 
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
+
+  const confirmLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
   return (
     <>
       {/* Desktop Navigation - Hidden on Mobile */}
@@ -43,11 +57,10 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
                       key={item.id}
                       data-testid={`nav-${item.id}-btn`}
                       onClick={() => navigate(item.path)}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
-                        isActive
-                          ? 'bg-[#F8F6F1] text-[#A68A64] border-b-2 border-[#A68A64]'
-                          : 'text-[#6A645C] active:bg-[#F8F6F1] active:text-[#2C2A27]'
-                      }`}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${isActive
+                        ? 'bg-[#F8F6F1] text-[#A68A64] border-b-2 border-[#A68A64]'
+                        : 'text-[#6A645C] active:bg-[#F8F6F1] active:text-[#2C2A27]'
+                        }`}
                     >
                       <Icon className="w-4 h-4" />
                       <span>{item.label}</span>
@@ -58,7 +71,7 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
             </div>
             <button
               data-testid="logout-btn"
-              onClick={handleLogout}
+              onClick={confirmLogout}
               className="flex items-center space-x-2 px-4 py-2 text-[#6A645C] active:text-[#2C2A27] rounded-md active:bg-[#F8F6F1] transition-colors"
             >
               <LogOut className="w-4 h-4" />
@@ -75,7 +88,7 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
         </h1>
         <button
           data-testid="logout-btn-mobile"
-          onClick={handleLogout}
+          onClick={confirmLogout}
           className="p-2 text-[#6A645C] active:text-[#2C2A27] rounded-md active:bg-[#F8F6F1]"
         >
           <LogOut className="w-5 h-5" />
@@ -93,11 +106,10 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
                 key={item.id}
                 data-testid={`nav-${item.id}-btn-mobile`}
                 onClick={() => navigate(item.path)}
-                className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-colors min-w-[72px] ${
-                  isActive
-                    ? 'text-[#A68A64]'
-                    : 'text-[#6A645C] active:bg-[#F8F6F1]'
-                }`}
+                className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-colors min-w-[72px] ${isActive
+                  ? 'text-[#A68A64]'
+                  : 'text-[#6A645C] active:bg-[#F8F6F1]'
+                  }`}
               >
                 <Icon className={`w-6 h-6 mb-1 ${isActive ? 'text-[#A68A64]' : ''}`} />
                 <span className="text-xs font-medium">{item.label}</span>
@@ -106,6 +118,35 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
           })}
         </div>
       </nav>
+
+      {/* Logout Confirmation Dialog */}
+      {/* Logout Confirmation Dialog */}
+      <Dialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+        <DialogContent className="w-[90vw] max-w-[340px] md:max-w-md rounded-2xl !rounded-2xl border-[#E8E3D9] bg-[#F8F6F1] p-6 shadow-xl gap-6">
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: 'Playfair Display, serif' }} className="text-xl md:text-2xl text-[#2C2A27] text-center">
+              Close the Book?
+            </DialogTitle>
+            <DialogDescription style={{ fontFamily: 'Lora, serif' }} className="text-[#6A645C] text-base mt-2 text-center leading-relaxed">
+              Your journey so far has been saved. Are you ready to return to reality?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col gap-3 w-full">
+            <button
+              onClick={() => setShowLogoutConfirm(false)}
+              className="w-full py-3.5 rounded-xl bg-[#2C2A27] text-[#F8F6F1] font-medium text-lg shadow-md active:scale-[0.98] transition-all hover:bg-[#1a1918]"
+            >
+              Stay Immersed
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full py-3.5 rounded-xl border border-[#E8E3D9] text-[#6A645C] font-medium text-lg hover:bg-white active:bg-[#F8F6F1] transition-colors"
+            >
+              End Session
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

@@ -247,49 +247,89 @@ const Dashboard = ({ user }) => {
           <p className="text-[#6A645C] text-base md:text-lg" style={{ fontFamily: 'Lora, serif' }}>Ready to immerse yourself?</p>
         </div>
 
-        <div className="mb-8 md:mb-12 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center space-x-3">
-            <Flame className="w-6 h-6 text-[#A68A64]" />
-            <div>
-              <div className="text-2xl font-bold text-[#2C2A27]" style={{ fontFamily: 'Playfair Display, serif' }}>
-                {streak?.current_streak || 0} day{streak?.current_streak !== 1 ? 's' : ''}
-              </div>
-              <div className="text-sm text-[#6A645C]">Current streak</div>
-            </div>
-          </div>
-
-          <div className="flex space-x-2 overflow-x-auto hide-scrollbar w-full md:w-auto">
-            {getWeekDates().map((date, i) => {
-              const isToday = date.toDateString() === new Date().toDateString();
-              const hasSession = hasSessionOnDate(date);
-              return (
-                <div key={i} className={`min-w-[44px] h-[44px] rounded-md flex flex-col items-center justify-center text-xs border ${hasSession ? 'bg-[#A68A64] text-white border-[#A68A64]' : isToday ? 'bg-white text-[#2C2A27] border-[#A68A64]' : 'bg-white text-[#9B948B] border-[#E8E3D9]'}`}>
-                  <div className="font-medium">{date.getDate()}</div>
+        <div className="card-paper p-4 md:p-8 mb-6 md:mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8">
+            <div className="flex items-center space-x-4 md:space-x-6">
+              <div className="relative">
+                <div className="absolute inset-0 bg-[#A68A64] opacity-20 blur-xl rounded-full animate-pulse transition-opacity group-hover:opacity-30"></div>
+                <div className="relative w-14 h-14 md:w-16 md:h-16 rounded-full bg-[#fdfaf6] border border-[#e8e3d9] flex items-center justify-center shadow-inner overflow-hidden">
+                  <Flame
+                    className={`w-7 h-7 md:w-8 md:h-8 transition-all duration-1000 ${streak?.current_streak > 0 ? 'text-[#A68A64] scale-110' : 'text-[#9B948B]'}`}
+                    style={{
+                      filter: streak?.current_streak > 0 ? 'drop-shadow(0 0 8px rgba(166, 138, 100, 0.3))' : 'none'
+                    }}
+                  />
                 </div>
-              );
-            })}
+              </div>
+              <div>
+                <div className="text-3xl md:text-4xl font-bold text-[#2C2A27]" style={{ fontFamily: 'Playfair Display, serif' }}>
+                  {streak?.current_streak || 0}
+                </div>
+                <div className="text-[10px] md:text-sm uppercase tracking-widest text-[#A68A64] font-medium">Day Streak</div>
+              </div>
+            </div>
+
+            <div className="w-full md:w-auto mt-2 md:mt-0">
+              <div className="text-[10px] uppercase tracking-widest text-[#9B948B] mb-3 text-center md:text-right font-medium">Weekly Activity</div>
+              <div className="flex items-center justify-center md:justify-end space-x-1.5 md:space-x-2">
+                {getWeekDates().map((date, i) => {
+                  const isToday = date.toDateString() === new Date().toDateString();
+                  const hasSession = hasSessionOnDate(date);
+                  const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+                  const dayNum = date.getDay();
+
+                  return (
+                    <div
+                      key={i}
+                      className="flex flex-col items-center space-y-1.5 animate-in fade-in slide-in-from-right-1 duration-500"
+                      style={{ animationDelay: `${i * 50}ms` }}
+                    >
+                      <span className={`text-[9px] md:text-[10px] font-bold ${isToday ? 'text-[#A68A64]' : 'text-[#9B948B]'}`}>
+                        {days[dayNum]}
+                      </span>
+                      <div
+                        className={`w-8 h-8 md:w-11 md:h-11 rounded-full flex flex-col items-center justify-center transition-all duration-500 border ${hasSession
+                          ? 'bg-[#A68A64] text-white border-[#A68A64] shadow-md scale-105 md:scale-110'
+                          : isToday
+                            ? 'bg-white text-[#2C2A27] border-[#A68A64] border-2 ring-2 md:ring-4 ring-[#A68A64]/5 shadow-sm'
+                            : 'bg-[#fdfaf6] text-[#9B948B] border-[#E8E3D9] opacity-60'
+                          }`}
+                      >
+                        <span className="text-[10px] md:text-[11px] font-medium">{date.getDate()}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
 
         {continueBook && (
-          <div className="card-paper p-6 md:p-8 mb-6 md:mb-8">
-            <div className="flex flex-col md:flex-row items-start md:justify-between gap-4">
-              <div className="flex-1 w-full">
-                <div className="text-sm text-[#6A645C] mb-2">Continue Reading</div>
-                <h2 className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-2" style={{ fontFamily: 'Playfair Display, serif' }}>{continueBook.title}</h2>
-                <p className="text-[#6A645C] mb-3 md:mb-4" style={{ fontFamily: 'Lora, serif' }}>by {continueBook.author}</p>
-                <div className="flex items-center space-x-4 text-sm text-[#9B948B] mb-4 md:mb-6">
-                  <span>{continueBook.total_sessions} sessions</span>
-                  <span>•</span>
-                  <span>{continueBook.total_minutes} minutes</span>
+          <div className="card-paper p-4 md:p-8 mb-6 md:mb-8 overflow-hidden">
+            <div className="flex flex-row items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] md:text-sm uppercase tracking-wider text-[#A68A64] font-medium mb-1">Continue Reading</div>
+                <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-[#2C2A27] mb-0.5 md:mb-1 line-clamp-1 md:line-clamp-none" style={{ fontFamily: 'Playfair Display, serif' }}>{continueBook.title}</h2>
+                <p className="text-xs md:text-lg text-[#6A645C] mb-2 md:mb-4 italic line-clamp-1" style={{ fontFamily: 'Lora, serif' }}>by {continueBook.author}</p>
+                <div className="flex items-center space-x-2 md:space-x-3 text-[10px] md:text-sm text-[#9B948B] mb-3 md:mb-6 uppercase tracking-tight">
+                  <span>{continueBook.total_sessions} sess</span>
+                  <span className="opacity-30">|</span>
+                  <span>{continueBook.total_minutes} mins</span>
                 </div>
-                <button onClick={handleContinueReading} className="btn-paper-accent flex items-center justify-center space-x-2 w-full md:w-auto">
-                  <Play className="w-4 h-4" />
+                <button onClick={handleContinueReading} className="btn-paper-accent flex items-center justify-center space-x-2 py-1.5 px-3 md:py-3 md:px-6 text-xs md:text-base">
+                  <Play className="w-3 h-3 md:w-4 md:h-4 fill-current" />
                   <span>Continue</span>
                 </button>
               </div>
               {continueBook.cover_url && (
-                <img src={continueBook.cover_url} alt={continueBook.title} className="w-20 h-28 md:w-24 md:h-32 object-cover rounded-md border border-[#E8E3D9] self-center md:self-start" />
+                <div className="flex-shrink-0">
+                  <img
+                    src={continueBook.cover_url}
+                    alt={continueBook.title}
+                    className="w-16 h-24 md:w-32 md:h-44 object-cover rounded shadow-md border border-[#E8E3D9]"
+                  />
+                </div>
               )}
             </div>
           </div>
