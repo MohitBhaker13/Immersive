@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Cookie, Response, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -11,6 +11,8 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 import requests
+import json
+from google import genai
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -145,6 +147,15 @@ class OnboardingData(BaseModel):
     daily_goal_minutes: int
     default_mood: str
     sound_enabled: bool
+
+class ChatMessage(BaseModel):
+    role: str  # 'user' or 'assistant'
+    content: str
+
+class ChatRequest(BaseModel):
+    book_id: str
+    question: str
+    history: List[ChatMessage] = []
 
 # ==================== AUTH HELPERS ====================
 
@@ -835,6 +846,93 @@ async def get_calendar(request: Request, session_token: Optional[str] = Cookie(N
             calendar_data[date_key]["minutes"] += session.get("duration_minutes", 0)
     
     return calendar_data
+
+# ==================== CHAT / BOOK COMPANION ROUTES ====================
+
+# Initialize Gemini client
+gemini_api_key = os.environ.get('GEMINI_API_KEY', '')
+gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and gemini_api_key != 'your-gemini-api-key-here' else None
+
+@api_router.post("/chat")
+async def chat_with_book(chat_req: ChatRequest, request: Request, session_token: Optional[str] = Cookie(None)):
+    """AI-powered book companion chat — streams responses via SSE"""
+    user = await get_current_user(request, session_token)
+
+    if not gemini_client:
+        raise HTTPException(status_code=503, detail="AI chat not configured. Please set GEMINI_API_KEY in .env")
+
+    # Fetch book metadata
+    book = await db.books.find_one(
+        {"book_id": chat_req.book_id, "user_id": user["user_id"]},
+        {"_id": 0}
+    )
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    # Build system prompt with book context
+    system_prompt = (
+        f'You are a literary companion for the book "{book["title"]}" by {book["author"]}.\n'
+        f'Genre: {book.get("genre", "General")}.\n'
+        f'Description: {book.get("description", "No description available.")}.\n\n'
+        'You help readers recall characters, plot points, themes, and context.\n'
+        'Rules:\n'
+        '- Keep answers concise (2-3 short paragraphs max).\n'
+        '- Avoid major spoilers unless the user explicitly asks for them.\n'
+        '- Stay warm and encouraging, like a fellow book-lover.\n'
+        '- If you are unsure about specific details, say so honestly.\n'
+        '- Format your response in plain text, not markdown.'
+    )
+
+    # Build conversation for Gemini
+    contents = []
+    for msg in chat_req.history:
+        contents.append({
+            "role": "user" if msg.role == "user" else "model",
+            "parts": [{"text": msg.content}]
+        })
+    contents.append({
+        "role": "user",
+        "parts": [{"text": chat_req.question}]
+    })
+
+    async def generate_stream():
+        try:
+            response = gemini_client.models.generate_content_stream(
+                model="gemini-2.5-flash",
+                contents=contents,
+                config={
+                    "system_instruction": system_prompt,
+                    "temperature": 0.7,
+                    "max_output_tokens": 1024,
+                }
+            )
+            for chunk in response:
+                if chunk.text:
+                    yield f"data: {json.dumps({'text': chunk.text})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception as e:
+            error_msg = str(e)
+            logging.error(f"Gemini API error: {error_msg}")
+            # Give user-friendly error messages
+            if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg:
+                friendly = "The AI is taking a short break (rate limit reached). Please wait a moment and try again."
+            elif '403' in error_msg or 'PERMISSION_DENIED' in error_msg:
+                friendly = "The AI key doesn't have permission. Please check your Gemini API key."
+            elif '400' in error_msg or 'INVALID_ARGUMENT' in error_msg:
+                friendly = "Something went wrong with the request. Please try a different question."
+            else:
+                friendly = f"Something went wrong: {error_msg[:150]}"
+            yield f"data: {json.dumps({'error': friendly})}\n\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 # Include the router in the main app
 app.include_router(api_router)

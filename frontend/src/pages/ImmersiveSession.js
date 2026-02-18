@@ -2,12 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
 import { toast } from 'sonner';
-import { X, Volume2, VolumeX, StickyNote, Volume1, Music } from 'lucide-react';
+import { X, Volume2, VolumeX, StickyNote, Volume1, Music, MessageCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { SOUND_THEMES, getRandomTrack, MOOD_OPTIONS } from '@/utils/constants';
 import audioManager from '@/utils/audioManager';
+import BookCompanionChat from '@/components/BookCompanionChat';
 
 const ImmersiveSession = () => {
   const { sessionId } = useParams();
@@ -23,6 +24,7 @@ const ImmersiveSession = () => {
   const [currentTheme, setCurrentTheme] = useState(null);
   const [noteContent, setNoteContent] = useState('');
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showCompanionChat, setShowCompanionChat] = useState(false);
   const sessionRef = useRef(null);
   const hasLoaded = useRef(false);
 
@@ -368,6 +370,22 @@ const ImmersiveSession = () => {
         >
           <StickyNote className="w-6 h-6 md:w-5 md:h-5" />
         </button>
+
+        {/* Book Companion Chat Button */}
+        <button
+          onClick={() => setShowCompanionChat(true)}
+          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500 active:scale-95 border-2"
+          style={{
+            backgroundColor: showCompanionChat ? (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64') : (SOUND_THEMES[currentTheme]?.ui?.paper || 'white'),
+            borderColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64',
+            color: showCompanionChat
+              ? (['Horror', 'SciFi', 'Cyberpunk', 'Storm', 'Thriller', 'Epic'].includes(currentTheme) ? '#1e293b' : 'white')
+              : (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64')
+          }}
+          title="Ask about this book"
+        >
+          <MessageCircle className="w-6 h-6 md:w-5 md:h-5" />
+        </button>
       </div>
 
       {/* Note Dialog */}
@@ -456,6 +474,14 @@ const ImmersiveSession = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Book Companion Chat */}
+      <BookCompanionChat
+        book={book}
+        currentTheme={currentTheme}
+        open={showCompanionChat}
+        onClose={() => setShowCompanionChat(false)}
+      />
     </div>
   );
 };
