@@ -63,7 +63,12 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to get response');
+                let errorMsg = `Server error (${response.status})`;
+                try {
+                    const errData = await response.json();
+                    errorMsg = errData.detail || errorMsg;
+                } catch { }
+                throw new Error(errorMsg);
             }
 
             const reader = response.body.getReader();
