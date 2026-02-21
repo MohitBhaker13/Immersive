@@ -37,6 +37,17 @@ db = client[os.environ['DB_NAME']]
 # Create the main app without a prefix
 app = FastAPI()
 
+@app.on_event("startup")
+async def startup_db_client():
+    from pymongo import ASCENDING, DESCENDING
+    # Create indexes for performance optimization
+    await db.books.create_index([("user_id", ASCENDING)])
+    await db.books.create_index([("user_id", ASCENDING), ("status", ASCENDING)])
+    await db.sessions.create_index([("user_id", ASCENDING), ("started_at", DESCENDING)])
+    await db.streaks.create_index([("user_id", ASCENDING)])
+    await db.notes.create_index([("book_id", ASCENDING), ("created_at", DESCENDING)])
+    print("MongoDB indexes verified.")
+
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
