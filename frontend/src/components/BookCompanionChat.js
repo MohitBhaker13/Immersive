@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Send, BookOpen, Sparkles, Lock, Unlock } from 'lucide-react';
+import { X, Send, BookOpen, Sparkles, Lock, Unlock, Info, RefreshCw } from 'lucide-react';
 import { SOUND_THEMES } from '@/utils/constants';
 
 const QUICK_PROMPTS = [
@@ -18,6 +18,41 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
 
     // Spoiler lock toggle — ON (locked) by default
     const [spoilerLocked, setSpoilerLocked] = useState(true);
+
+    // Info panel toggle
+    const [showInfo, setShowInfo] = useState(false);
+    const [usage, setUsage] = useState(null);
+
+    // Fetch usage stats when info panel is opened or after sending a message
+    const fetchUsage = useCallback(async () => {
+        try {
+            const token = localStorage.getItem('session_token');
+            const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/chat/usage`, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                credentials: 'include',
+            });
+            if (res.ok) setUsage(await res.json());
+        } catch { /* silent */ }
+    }, []);
+
+    // Poll usage when info panel is open
+    useEffect(() => {
+        if (!showInfo) return;
+        fetchUsage();
+        const interval = setInterval(fetchUsage, 10000);
+        return () => clearInterval(interval);
+    }, [showInfo, fetchUsage]);
+
+    // Refresh usage after each message completes
+    useEffect(() => {
+        if (!isStreaming && messages.length > 0) fetchUsage();
+    }, [isStreaming, messages.length, fetchUsage]);
+
+    const formatTime = (seconds) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}m ${s < 10 ? '0' : ''}${s}s`;
+    };
 
     // Simple inline markdown renderer for model output
     const renderMarkdown = (text) => {
@@ -158,6 +193,15 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [book, messages, isStreaming, spoilerLocked]);
 
+    // Retry handler — removes old assistant response and re-sends the question
+    const retryMessage = useCallback((msgIndex) => {
+        const userMsg = messages[msgIndex - 1];
+        if (!userMsg || userMsg.role !== 'user') return;
+        setMessages(prev => prev.filter((_, i) => i !== msgIndex));
+        setTimeout(() => sendMessage(userMsg.content), 100);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, sendMessage]);
+
     const handleSubmit = (e) => {
         e.preventDefault();
         sendMessage(input);
@@ -204,14 +248,66 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                             </div>
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="w-9 h-9 rounded-full flex items-center justify-center transition-colors hover:opacity-80 shrink-0"
-                        style={{ backgroundColor: accent + '15', color: textColor }}
-                    >
-                        <X className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                            onClick={() => setShowInfo(!showInfo)}
+                            className="w-9 h-9 rounded-full flex items-center justify-center transition-colors hover:opacity-80"
+                            style={{ backgroundColor: showInfo ? accent + '30' : accent + '15', color: textColor }}
+                            title="How this bot works"
+                        >
+                            <Info className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={onClose}
+                            className="w-9 h-9 rounded-full flex items-center justify-center transition-colors hover:opacity-80"
+                            style={{ backgroundColor: accent + '15', color: textColor }}
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
+
+                {/* Info Panel Overlay */}
+                {showInfo && (
+                    <div className="px-4 py-3 border-b space-y-3 text-xs" style={{ borderColor: accent + '20', color: textColor }}>
+                        <div>
+                            <div className="font-semibold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>How it works</div>
+                            <p className="opacity-70 leading-relaxed">This companion uses Google's Gemini AI to answer questions about your book. It references verified data from Google Books to stay accurate.</p>
+                        </div>
+                        <div>
+                            <div className="font-semibold mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>Limitations</div>
+                            <ul className="opacity-70 space-y-0.5 leading-relaxed">
+                                <li>• Responses are AI-generated and may not always be accurate</li>
+                                <li>• The bot only discusses the current book</li>
+                                <li>• Spoiler protection depends on the lock toggle below</li>
+                            </ul>
+                        </div>
+                        {usage && (
+                            <div>
+                                <div className="font-semibold mb-1.5" style={{ fontFamily: 'Playfair Display, serif' }}>Usage</div>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ backgroundColor: accent + '20' }}>
+                                        <div
+                                            className="h-full rounded-full transition-all duration-500"
+                                            style={{
+                                                width: `${(usage.remaining / usage.limit) * 100}%`,
+                                                backgroundColor: usage.remaining <= 3 ? '#ef4444' : accent,
+                                            }}
+                                        />
+                                    </div>
+                                    <span className="text-[10px] font-medium whitespace-nowrap" style={{ color: usage.remaining <= 3 ? '#ef4444' : textColor }}>
+                                        {usage.remaining}/{usage.limit}
+                                    </span>
+                                </div>
+                                <div className="text-[10px] opacity-50 mt-1">
+                                    {usage.remaining === usage.limit
+                                        ? 'All messages available'
+                                        : `Resets in ${formatTime(usage.resets_in_seconds)}`}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Spoiler Lock Toggle + Unknown Book Warning */}
                 <div className="px-4 pt-2 flex items-center gap-2">
@@ -271,7 +367,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                     {messages.map((msg, i) => (
                         <div
                             key={i}
-                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} msg-enter`}
+                            className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} msg-enter`}
                         >
                             <div
                                 className={`max-w-[85%] px-4 py-3 text-sm leading-relaxed ${msg.role === 'user'
@@ -304,6 +400,19 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                                     <span className="inline-block w-1 h-4 ml-0.5 animate-pulse" style={{ backgroundColor: accent }} />
                                 )}
                             </div>
+                            {/* Retry button — shown on completed assistant messages */}
+                            {msg.role === 'assistant' && !msg.streaming && msg.content && (
+                                <button
+                                    onClick={() => retryMessage(i)}
+                                    disabled={isStreaming}
+                                    className="flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] opacity-40 hover:opacity-80 transition-opacity disabled:opacity-20"
+                                    style={{ color: textColor }}
+                                    title="Regenerate this response"
+                                >
+                                    <RefreshCw className="w-3 h-3" />
+                                    Retry
+                                </button>
+                            )}
                         </div>
                     ))}
                     <div ref={messagesEndRef} />

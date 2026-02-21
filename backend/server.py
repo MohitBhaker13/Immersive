@@ -967,6 +967,24 @@ CHAT_SAFETY_SETTINGS = [
     ),
 ]
 
+@api_router.get("/chat/usage")
+async def get_chat_usage(request: Request, session_token: Optional[str] = Cookie(None)):
+    """Return current chat rate-limit usage for the authenticated user."""
+    user = await get_current_user(request, session_token)
+    uid = user["user_id"]
+    now = time.time()
+    timestamps = [t for t in _chat_rate_limit.get(uid, []) if now - t < CHAT_RATE_WINDOW]
+    used = len(timestamps)
+    oldest = min(timestamps) if timestamps else now
+    resets_in = max(0, int(CHAT_RATE_WINDOW - (now - oldest))) if timestamps else 0
+    return {
+        "used": used,
+        "limit": CHAT_RATE_LIMIT,
+        "remaining": CHAT_RATE_LIMIT - used,
+        "window_seconds": CHAT_RATE_WINDOW,
+        "resets_in_seconds": resets_in,
+    }
+
 @api_router.post("/chat")
 async def chat_with_book(chat_req: ChatRequest, request: Request, session_token: Optional[str] = Cookie(None)):
     """AI-powered book companion chat — streams responses via SSE"""
