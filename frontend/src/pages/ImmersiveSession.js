@@ -139,7 +139,7 @@ const ImmersiveSession = () => {
       toast.error('Failed to load session');
       navigate('/dashboard');
     }
-  }, [sessionId, navigate]);
+  }, [sessionId, navigate, currentTheme]);
 
   useEffect(() => {
     loadSession();
