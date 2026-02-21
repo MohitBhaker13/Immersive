@@ -271,8 +271,26 @@ const Library = () => {
     return (
       <div className="min-h-screen bg-[#F8F6F1]">
         <Navigation currentPage="library" />
-        <div className="flex items-center justify-center h-96">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#A68A64] border-r-transparent"></div>
+        <div className="max-w-[920px] mx-auto px-4 md:px-8 py-6 md:py-12">
+          <div className="flex items-center justify-between mb-8 md:mb-12">
+            <div className="skeleton h-10 w-40"></div>
+            <div className="skeleton h-10 w-28 rounded-md"></div>
+          </div>
+          <div className="skeleton h-12 w-full mb-6 md:mb-8 rounded-md"></div>
+          <div className="space-y-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="card-paper p-5 md:p-6">
+                <div className="flex items-start space-x-4">
+                  <div className="skeleton w-14 h-20 md:w-16 md:h-24 rounded"></div>
+                  <div className="flex-1">
+                    <div className="skeleton h-6 w-48 mb-2"></div>
+                    <div className="skeleton h-4 w-32 mb-3"></div>
+                    <div className="skeleton h-3 w-24"></div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -282,7 +300,7 @@ const Library = () => {
     <div className="min-h-screen bg-[#F8F6F1] paper-texture pb-20 md:pb-0">
       <Navigation currentPage="library" />
 
-      <div className="max-w-[920px] mx-auto px-4 md:px-8 py-6 md:py-12">
+      <div className="max-w-[920px] mx-auto px-4 md:px-8 py-6 md:py-12 page-enter">
         <div className="flex items-center justify-between mb-8 md:mb-12">
           <h1
             className="text-3xl md:text-5xl font-bold text-[#2C2A27]"

@@ -43,8 +43,9 @@ const ImmersiveSession = () => {
     await audioManager.stop(1000);
 
     try {
+      const planned = sessionRef.current?.duration_minutes || 30;
       await api.post(`/sessions/${sessionId}/complete`, {
-        actual_minutes: sessionRef.current?.duration_minutes,
+        actual_minutes: Math.max(1, planned),
       });
       toast.success('Session completed!');
       navigate('/dashboard');
@@ -88,7 +89,16 @@ const ImmersiveSession = () => {
       }
 
       setSession(currentSession);
-      setTimeRemaining(currentSession.duration_minutes * 60);
+
+      // Calculate exact time remaining based on backend started_at timestamp
+      let dateString = currentSession.started_at;
+      if (!dateString.endsWith('Z') && !dateString.includes('+')) {
+        dateString += 'Z'; // Force UTC parsing if the backend didn't append timezone info
+      }
+      const startedAt = new Date(dateString);
+      const elapsedSeconds = Math.floor((new Date() - startedAt) / 1000);
+      const totalSeconds = currentSession.duration_minutes * 60;
+      setTimeRemaining(Math.max(0, totalSeconds - elapsedSeconds));
 
       const sessionBook = booksRes.data.find((b) => b.book_id === currentSession.book_id);
       setBook(sessionBook);
@@ -153,14 +163,13 @@ const ImmersiveSession = () => {
   const confirmExit = useCallback(async () => {
     await audioManager.stop(500); // Quick fade out
 
-    const minutesSpent = Math.ceil((sessionRef.current?.duration_minutes * 60 - timeRemaining) / 60);
+    const totalSeconds = (sessionRef.current?.duration_minutes || 0) * 60 - timeRemaining;
+    const minutesSpent = Math.max(1, Math.ceil(totalSeconds / 60));
 
     try {
-      if (minutesSpent > 0) {
-        await api.post(`/sessions/${sessionId}/complete`, {
-          actual_minutes: minutesSpent,
-        });
-      }
+      await api.post(`/sessions/${sessionId}/complete`, {
+        actual_minutes: minutesSpent,
+      });
       navigate('/dashboard');
     } catch (error) {
       console.error('Failed to exit session:', error);
@@ -194,6 +203,12 @@ const ImmersiveSession = () => {
     );
   }
 
+  const totalSeconds = (session?.duration_minutes || 1) * 60;
+  const elapsedSeconds = totalSeconds - timeRemaining;
+  const progress = Math.min(1, elapsedSeconds / totalSeconds);
+  const circumference = 2 * Math.PI * 42;
+  const strokeDashoffset = circumference * (1 - progress);
+
   return (
     <div className="min-h-screen bg-[#F8F6F1] paper-texture relative">
       {/* Subtle background based on atmosphere */}
@@ -212,15 +227,24 @@ const ImmersiveSession = () => {
           <span>{SOUND_THEMES[currentTheme]?.name || 'Ambient'} Atmosphere</span>
         </div>
 
-        <div
-          data-testid="timer-display"
-          className="text-xl md:text-2xl font-medium transition-colors duration-500"
-          style={{
-            fontFamily: 'Playfair Display, serif',
-            color: SOUND_THEMES[currentTheme]?.ui?.text || '#2C2A27'
-          }}
-        >
-          {formatTime(timeRemaining)}
+        {/* Timer with progress ring */}
+        <div className="relative flex items-center justify-center w-20 h-20 md:w-24 md:h-24">
+          <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 96 96">
+            <circle cx="48" cy="48" r="42" fill="none" stroke={SOUND_THEMES[currentTheme]?.ui?.accent || '#E8E3D9'} strokeWidth="2.5" opacity="0.2" />
+            <circle cx="48" cy="48" r="42" fill="none" stroke={SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64'} strokeWidth="2.5"
+              strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
+              strokeLinecap="round" className="transition-all duration-1000 ease-linear" />
+          </svg>
+          <div
+            data-testid="timer-display"
+            className="text-lg md:text-xl font-medium transition-colors duration-500"
+            style={{
+              fontFamily: 'Playfair Display, serif',
+              color: SOUND_THEMES[currentTheme]?.ui?.text || '#2C2A27'
+            }}
+          >
+            {formatTime(timeRemaining)}
+          </div>
         </div>
 
         <button
@@ -235,7 +259,7 @@ const ImmersiveSession = () => {
 
       {/* Reading Area */}
       <div
-        className="relative z-10 max-w-[720px] mx-auto px-6 md:px-12 py-8 md:py-16 mt-8 rounded-2xl transition-all duration-1000 ease-in-out shadow-2xl"
+        className="relative z-10 max-w-[720px] mx-auto px-6 md:px-12 py-8 md:py-16 mt-4 md:mt-8 rounded-2xl transition-all duration-1000 ease-in-out shadow-2xl page-enter"
         style={{
           backgroundColor: SOUND_THEMES[currentTheme]?.ui?.paper || 'rgba(255, 255, 255, 0.9)',
           boxShadow: `0 25px 50px -12px ${SOUND_THEMES[currentTheme]?.ui?.shadow || 'rgba(0, 0, 0, 0.1)'}`,
@@ -289,12 +313,14 @@ const ImmersiveSession = () => {
 
       {/* Floating Controls - Mobile Optimized */}
       <div className="fixed bottom-6 right-4 md:bottom-8 md:right-8 z-20 flex flex-col space-y-3">
-        {/* Volume Control */}
+        {/* Atmosphere Button */}
         <button
           onClick={() => setShowAtmosphereDialog(true)}
           className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border duration-500"
           style={{
-            backgroundColor: showAtmosphereDialog ? (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64') : (SOUND_THEMES[currentTheme]?.ui?.paper || 'white'),
+            backgroundColor: showAtmosphereDialog ? (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64') : 'rgba(255,255,255,0.7)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
             borderColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#E8E3D9',
             color: showAtmosphereDialog
               ? (['Horror', 'SciFi', 'Cyberpunk', 'Storm', 'Thriller', 'Epic'].includes(currentTheme) ? '#1e293b' : 'white')
@@ -319,7 +345,9 @@ const ImmersiveSession = () => {
             }}
             className="w-14 h-14 md:w-12 md:h-12 rounded-full border flex items-center justify-center shadow-lg transition-all duration-500"
             style={{
-              backgroundColor: SOUND_THEMES[currentTheme]?.ui?.paper || 'white',
+              backgroundColor: 'rgba(255,255,255,0.7)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
               borderColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#E8E3D9'
             }}
             title={soundEnabled ? 'Mute sound' : 'Unmute sound'}
@@ -364,6 +392,8 @@ const ImmersiveSession = () => {
           className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500 active:scale-95"
           style={{
             backgroundColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
             color: ['Horror', 'SciFi', 'Cyberpunk', 'Storm', 'Thriller', 'Epic'].includes(currentTheme) ? '#1e293b' : 'white'
           }}
           title="Add note"
@@ -376,7 +406,9 @@ const ImmersiveSession = () => {
           onClick={() => setShowCompanionChat(true)}
           className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500 active:scale-95 border-2"
           style={{
-            backgroundColor: showCompanionChat ? (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64') : (SOUND_THEMES[currentTheme]?.ui?.paper || 'white'),
+            backgroundColor: showCompanionChat ? (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64') : 'rgba(255,255,255,0.7)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
             borderColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64',
             color: showCompanionChat
               ? (['Horror', 'SciFi', 'Cyberpunk', 'Storm', 'Thriller', 'Epic'].includes(currentTheme) ? '#1e293b' : 'white')

@@ -253,11 +253,12 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                                         key={i}
                                         onClick={() => sendMessage(prompt)}
                                         disabled={isStreaming}
-                                        className="w-full text-left px-4 py-3 rounded-xl text-xs border transition-all active:scale-[0.98] disabled:opacity-50"
+                                        className="w-full text-left px-4 py-3 rounded-xl text-xs border transition-all active:scale-[0.98] disabled:opacity-50 prompt-enter"
                                         style={{
                                             borderColor: accent + '30',
                                             color: textColor,
                                             fontFamily: 'Lora, serif',
+                                            animationDelay: `${i * 100}ms`,
                                         }}
                                     >
                                         {prompt}
@@ -270,7 +271,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                     {messages.map((msg, i) => (
                         <div
                             key={i}
-                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} msg-enter`}
                         >
                             <div
                                 className={`max-w-[85%] px-4 py-3 text-sm leading-relaxed ${msg.role === 'user'
@@ -293,10 +294,10 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                                     msg.content
                                 )}
                                 {msg.streaming && !msg.content && (
-                                    <div className="flex items-center gap-1.5 py-1">
-                                        <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: accent, animationDelay: '0ms' }} />
-                                        <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: accent, animationDelay: '150ms' }} />
-                                        <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: accent, animationDelay: '300ms' }} />
+                                    <div className="flex items-center gap-1 py-1">
+                                        <span className="typing-dot" style={{ backgroundColor: accent }} />
+                                        <span className="typing-dot" style={{ backgroundColor: accent }} />
+                                        <span className="typing-dot" style={{ backgroundColor: accent }} />
                                     </div>
                                 )}
                                 {msg.streaming && msg.content && (
@@ -321,7 +322,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                         onChange={(e) => setInput(e.target.value)}
                         placeholder="Ask about the book..."
                         disabled={isStreaming}
-                        className="flex-1 py-3 px-4 rounded-xl text-sm border-none outline-none disabled:opacity-50"
+                        className="flex-1 py-3 px-4 rounded-xl text-sm border-none outline-none disabled:opacity-50 transition-shadow duration-200 focus:shadow-[0_0_0_2px_rgba(166,138,100,0.25)]"
                         style={{
                             backgroundColor: isDarkTheme ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
                             color: textColor,

@@ -45,7 +45,8 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
         <div className="max-w-[1200px] mx-auto px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-8">
-              <h1 className="text-2xl font-bold text-[#2C2A27]" style={{ fontFamily: 'Playfair Display, serif' }}>
+              <h1 className="text-2xl font-bold text-[#2C2A27] flex items-center gap-2" style={{ fontFamily: 'Playfair Display, serif' }}>
+                <BookOpen className="w-5 h-5 text-[#A68A64]" />
                 Immersive
               </h1>
               <div className="flex space-x-1">
@@ -57,13 +58,14 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
                       key={item.id}
                       data-testid={`nav-${item.id}-btn`}
                       onClick={() => navigate(item.path)}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${isActive
-                        ? 'bg-[#F8F6F1] text-[#A68A64] border-b-2 border-[#A68A64]'
-                        : 'text-[#6A645C] active:bg-[#F8F6F1] active:text-[#2C2A27]'
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${isActive
+                        ? 'bg-[#F4F1EA] text-[#A68A64] shadow-sm'
+                        : 'text-[#6A645C] hover:bg-[#F8F6F1] hover:text-[#2C2A27]'
                         }`}
                     >
                       <Icon className="w-4 h-4" />
-                      <span>{item.label}</span>
+                      <span className="font-medium">{item.label}</span>
+                      {isActive && <div className="w-1 h-1 rounded-full bg-[#A68A64] ml-1" />}
                     </button>
                   );
                 })}
@@ -83,7 +85,8 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
 
       {/* Mobile Top Bar */}
       <div className="md:hidden border-b border-[#E8E3D9] bg-white px-4 py-3 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-[#2C2A27]" style={{ fontFamily: 'Playfair Display, serif' }}>
+        <h1 className="text-xl font-bold text-[#2C2A27] flex items-center gap-2" style={{ fontFamily: 'Playfair Display, serif' }}>
+          <BookOpen className="w-4 h-4 text-[#A68A64]" />
           Immersive
         </h1>
         <button
@@ -106,13 +109,15 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
                 key={item.id}
                 data-testid={`nav-${item.id}-btn-mobile`}
                 onClick={() => navigate(item.path)}
-                className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-colors min-w-[72px] ${isActive
+                className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-all duration-200 min-w-[72px] ${isActive
                   ? 'text-[#A68A64]'
                   : 'text-[#6A645C] active:bg-[#F8F6F1]'
                   }`}
               >
-                <Icon className={`w-6 h-6 mb-1 ${isActive ? 'text-[#A68A64]' : ''}`} />
-                <span className="text-xs font-medium">{item.label}</span>
+                <div className={`p-1.5 rounded-full mb-0.5 transition-all duration-200 ${isActive ? 'bg-[#A68A64]/10' : ''}`}>
+                  <Icon className={`w-5 h-5 ${isActive ? 'text-[#A68A64]' : ''}`} />
+                </div>
+                <span className={`text-[10px] font-medium ${isActive ? 'text-[#A68A64]' : ''}`}>{item.label}</span>
               </button>
             );
           })}

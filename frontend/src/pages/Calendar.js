@@ -31,19 +31,19 @@ const Calendar = () => {
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
     const startingDayOfWeek = firstDay.getDay();
-    
+
     const days = [];
-    
+
     // Add empty cells for days before the month starts
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null);
     }
-    
+
     // Add all days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(new Date(year, month, day));
     }
-    
+
     return days;
   };
 
@@ -68,8 +68,21 @@ const Calendar = () => {
     return (
       <div className="min-h-screen bg-[#F8F6F1]">
         <Navigation currentPage="calendar" />
-        <div className="flex items-center justify-center h-96">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#A68A64] border-r-transparent"></div>
+        <div className="max-w-[920px] mx-auto px-4 md:px-8 py-6 md:py-12">
+          <div className="skeleton h-10 w-56 mb-8 md:mb-12"></div>
+          <div className="card-paper p-5 md:p-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="skeleton h-10 w-20 rounded-md"></div>
+              <div className="skeleton h-7 w-40"></div>
+              <div className="skeleton h-10 w-20 rounded-md"></div>
+            </div>
+            <div className="grid grid-cols-7 gap-1 md:gap-2 mb-3">
+              {[...Array(7)].map((_, i) => <div key={i} className="skeleton h-6 rounded"></div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1 md:gap-2">
+              {[...Array(35)].map((_, i) => <div key={i} className="skeleton aspect-square rounded-md"></div>)}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -78,9 +91,9 @@ const Calendar = () => {
   return (
     <div className="min-h-screen bg-[#F8F6F1] paper-texture pb-20 md:pb-0">
       <Navigation currentPage="calendar" />
-      
-      <div className="max-w-[920px] mx-auto px-4 md:px-8 py-6 md:py-12">
-        <h1 
+
+      <div className="max-w-[920px] mx-auto px-4 md:px-8 py-6 md:py-12 page-enter">
+        <h1
           className="text-3xl md:text-5xl font-bold text-[#2C2A27] mb-8 md:mb-12"
           style={{ fontFamily: 'Playfair Display, serif' }}
         >
@@ -97,7 +110,7 @@ const Calendar = () => {
             >
               ← <span className="hidden md:inline">Previous</span>
             </button>
-            <h2 
+            <h2
               className="text-lg md:text-2xl font-bold text-[#2C2A27]"
               style={{ fontFamily: 'Playfair Display, serif' }}
             >
@@ -128,21 +141,19 @@ const Calendar = () => {
               if (!day) {
                 return <div key={`empty-${i}`} className="aspect-square" />;
               }
-              
+
               const dateStr = day.toISOString().split('T')[0];
               const dayData = calendarData[dateStr] || { sessions: 0, minutes: 0 };
               const intensity = getIntensity(dayData.minutes);
               const isToday = day.toDateString() === new Date().toDateString();
-              
+
               return (
                 <div
                   key={dateStr}
                   data-testid={`calendar-day-${day.getDate()}`}
-                  className={`aspect-square rounded-md border flex flex-col items-center justify-center ${
-                    intensity
-                  } ${
-                    isToday ? 'border-[#A68A64] border-2' : 'border-[#E8E3D9]'
-                  } transition-colors active:border-[#A68A64]`}
+                  className={`aspect-square rounded-md border flex flex-col items-center justify-center ${intensity
+                    } ${isToday ? 'border-[#A68A64] border-2' : 'border-[#E8E3D9]'
+                    } transition-colors active:border-[#A68A64]`}
                 >
                   <div className="text-xs md:text-sm font-medium text-[#2C2A27]">{day.getDate()}</div>
                   {dayData.sessions > 0 && (

@@ -654,6 +654,10 @@ async def complete_session(session_id: str, completion: SessionComplete, request
     if isinstance(started_at, str):
         started_at = datetime.fromisoformat(started_at)
     
+    # Ensure aware datetime to prevent subtraction error
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    
     # Calculate difference in minutes
     time_diff = ended_at - started_at
     actual_minutes = max(1, round(time_diff.total_seconds() / 60))
