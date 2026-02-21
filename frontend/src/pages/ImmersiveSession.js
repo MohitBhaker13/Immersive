@@ -25,8 +25,14 @@ const ImmersiveSession = () => {
   const [noteContent, setNoteContent] = useState('');
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showCompanionChat, setShowCompanionChat] = useState(false);
+  const [showMobileVolume, setShowMobileVolume] = useState(false);
+  const [prevTheme, setPrevTheme] = useState(null);
+  const [themeFading, setThemeFading] = useState(false);
   const sessionRef = useRef(null);
   const hasLoaded = useRef(false);
+  const lastTouchTime = useRef(0);
+  const muteTimer = useRef(null);
+  const muteFired = useRef(false);
 
   // Keep ref in sync for handlers to use without changing identity
   useEffect(() => {
@@ -103,8 +109,11 @@ const ImmersiveSession = () => {
       const sessionBook = booksRes.data.find((b) => b.book_id === currentSession.book_id);
       setBook(sessionBook);
 
-      if (currentSession.sound_theme && SOUND_THEMES[currentSession.sound_theme]) {
-        const themeToPlay = currentSession.sound_theme;
+      // Prioritize the user's manually selected theme for this session, otherwise fallback to the original session theme
+      const savedTheme = sessionStorage.getItem(`theme_${sessionId}`);
+      const themeToPlay = savedTheme || currentSession.sound_theme;
+
+      if (themeToPlay && SOUND_THEMES[themeToPlay]) {
         setCurrentTheme(themeToPlay);
         const track = getRandomTrack(themeToPlay);
         if (track) {
@@ -128,14 +137,27 @@ const ImmersiveSession = () => {
 
   const toggleSound = useCallback(() => {
     const newMutedState = audioManager.toggleMute();
-    setSoundEnabled(!newMutedState);
-  }, []);
+    // Fallback in case Manager wasn't ready yet or is already in sync
+    const finalMutedState = newMutedState === undefined ? !soundEnabled : newMutedState;
+    setSoundEnabled(!finalMutedState);
+  }, [soundEnabled]);
 
   const handleVolumeChange = useCallback((newVolume) => {
     const vol = newVolume[0] / 100; // Convert 0-100 to 0-1
     setVolume(vol);
     audioManager.setVolume(vol);
-  }, []);
+
+    // Auto-unmute if sliding up from 0
+    if (vol > 0 && !soundEnabled) {
+      setSoundEnabled(true);
+      if (audioManager.isMuted) audioManager.toggleMute();
+    } else if (vol === 0 && soundEnabled) {
+      // Auto-mute if sliding to 0
+      setSoundEnabled(false);
+      if (!audioManager.isMuted) audioManager.toggleMute();
+    }
+  }, [soundEnabled]);
+
 
   const handleExit = useCallback(() => {
     setShowExitConfirm(true);
@@ -144,11 +166,22 @@ const ImmersiveSession = () => {
   const handleThemeChange = useCallback(async (themeName) => {
     if (themeName === currentTheme) return;
 
+    // Crossfade: keep old theme visible while new one fades in
+    setPrevTheme(currentTheme);
+    setThemeFading(true);
     setCurrentTheme(themeName);
+    // After the CSS transition completes, remove the old layer
+    setTimeout(() => {
+      setThemeFading(false);
+      setPrevTheme(null);
+    }, 800);
     const track = getRandomTrack(themeName);
     if (track) {
       await audioManager.play(themeName, track.url, 1500); // Smooth transition
       setSoundEnabled(true);
+
+      // Store locally so it survives page refreshes during this session
+      sessionStorage.setItem(`theme_${sessionId}`, themeName);
 
       // Persist preference to backend for this book
       if (book) {
@@ -211,11 +244,31 @@ const ImmersiveSession = () => {
 
   return (
     <div className="min-h-screen bg-[#F8F6F1] paper-texture relative">
-      {/* Subtle background based on atmosphere */}
+      {/* Tap-anywhere-to-dismiss backdrop (mobile only) */}
+      {showMobileVolume && (
+        <div
+          className="fixed inset-0 z-40 bg-transparent"
+          onClick={() => setShowMobileVolume(false)}
+        />
+      )}
+
+      {/* Smooth crossfade background: old theme fades out, new theme fades in */}
+      {prevTheme && themeFading && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: SOUND_THEMES[prevTheme]?.ui?.bg || '#F8F6F1',
+            opacity: 0,
+            transition: 'opacity 800ms ease-in-out',
+          }}
+        />
+      )}
       <div
-        className="absolute inset-0 pointer-events-none transition-all duration-1000 ease-in-out"
+        className="absolute inset-0 pointer-events-none"
         style={{
           background: SOUND_THEMES[currentTheme]?.ui?.bg || '#F8F6F1',
+          opacity: 1,
+          transition: 'opacity 800ms ease-in-out',
         }}
       />
 
@@ -312,7 +365,7 @@ const ImmersiveSession = () => {
       </div>
 
       {/* Floating Controls - Mobile Optimized */}
-      <div className="fixed bottom-6 right-4 md:bottom-8 md:right-8 z-20 flex flex-col space-y-3">
+      <div className="fixed bottom-6 right-4 md:bottom-8 md:right-8 z-50 flex flex-col space-y-3">
         {/* Atmosphere Button */}
         <button
           onClick={() => setShowAtmosphereDialog(true)}
@@ -332,18 +385,45 @@ const ImmersiveSession = () => {
         </button>
 
         <div
-          className="relative group"
+          className="relative group z-50"
           onMouseEnter={() => setShowVolumeSlider(true)}
           onMouseLeave={() => setShowVolumeSlider(false)}
         >
+
           <button
             data-testid="toggle-sound-btn"
-            onClick={toggleSound}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              toggleSound();
+            onClick={(e) => {
+              // Distinguish touch from mouse using timing
+              const isTouch = Date.now() - lastTouchTime.current < 600;
+
+              if (isTouch) {
+                // On mobile: strictly toggle slider visibility
+                setShowMobileVolume(prev => !prev);
+              } else {
+                // On desktop: toggle mute
+                toggleSound();
+              }
             }}
-            className="w-14 h-14 md:w-12 md:h-12 rounded-full border flex items-center justify-center shadow-lg transition-all duration-500"
+            onTouchStart={() => {
+              lastTouchTime.current = Date.now();
+              muteFired.current = false;
+              // Start long-press timer for mute toggle
+              muteTimer.current = setTimeout(() => {
+                toggleSound();
+                muteFired.current = true;
+              }, 500);
+            }}
+            onTouchMove={() => {
+              // Cancel mute if moving (prevents accidental mute during scroll)
+              clearTimeout(muteTimer.current);
+            }}
+            onTouchEnd={(e) => {
+              clearTimeout(muteTimer.current);
+              if (muteFired.current) {
+                e.preventDefault(); // prevent onClick from also firing
+              }
+            }}
+            className="w-14 h-14 md:w-12 md:h-12 rounded-full border flex items-center justify-center shadow-lg transition-all duration-500 relative z-20"
             style={{
               backgroundColor: 'rgba(255,255,255,0.7)',
               backdropFilter: 'blur(12px)',
@@ -363,24 +443,30 @@ const ImmersiveSession = () => {
             )}
           </button>
 
-          {/* Volume Slider - Desktop Only */}
-          {showVolumeSlider && (
+          {/* Volume Slider — Desktop: hover, Mobile: tap to expand */}
+          {(showVolumeSlider || showMobileVolume) && (
             <div
-              className="hidden md:block absolute right-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-white border border-[#E8E3D9] rounded-lg p-3 shadow-lg"
-              style={{ display: window.matchMedia('(pointer: coarse)').matches ? 'none' : 'block' }}
+              className="absolute right-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-white border border-[#E8E3D9] rounded-lg p-3 shadow-lg z-50 transition-all duration-300"
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center space-x-3">
-                <VolumeX className="w-4 h-4 text-[#9B948B]" />
+                <VolumeX
+                  className={`w-4 h-4 cursor-pointer transition-colors ${!soundEnabled ? 'text-[#A68A64]' : 'text-[#9B948B]'}`}
+                  onClick={() => soundEnabled && toggleSound()}
+                />
                 <Slider
-                  value={[volume * 100]}
+                  value={[soundEnabled ? volume * 100 : 0]}
                   onValueChange={handleVolumeChange}
                   max={100}
                   step={1}
                   className="w-24"
                 />
-                <Volume2 className="w-4 h-4 text-[#2C2A27]" />
+                <Volume2
+                  className={`w-4 h-4 cursor-pointer transition-colors ${!soundEnabled ? 'text-[#9B948B]' : 'text-[#A68A64]'}`}
+                  onClick={() => !soundEnabled && toggleSound()}
+                />
               </div>
-              {/* Invisible bridge to prevent mouse-out when moving between button and slider */}
+              {/* Invisible bridge for desktop hover */}
               <div className="absolute top-0 -right-4 w-4 h-full" />
             </div>
           )}

@@ -38,7 +38,7 @@ class AudioManager {
 
       // Add error handling
       this.currentAudio.addEventListener('error', this.handleError.bind(this));
-      
+
       // Add ended event (in case loop fails)
       this.currentAudio.addEventListener('ended', this.handleEnded.bind(this));
 
@@ -50,7 +50,7 @@ class AudioManager {
       await this.fadeIn(fadeDuration);
 
       this.retryCount = 0; // Reset retry count on success
-      
+
       console.log(`[AudioManager] Playing theme: ${theme}`);
     } catch (error) {
       console.error('[AudioManager] Failed to play audio:', error);
@@ -67,7 +67,7 @@ class AudioManager {
 
     try {
       await this.fadeOut(fadeDuration);
-      
+
       this.currentAudio.pause();
       this.currentAudio.currentTime = 0;
       this.currentAudio = null;
@@ -90,7 +90,7 @@ class AudioManager {
       await this.fadeOut(fadeDuration);
       this.currentAudio.pause();
       this.isPlaying = false;
-      
+
       console.log('[AudioManager] Audio paused');
     } catch (error) {
       console.error('[AudioManager] Error pausing audio:', error);
@@ -107,7 +107,7 @@ class AudioManager {
       await this.currentAudio.play();
       this.isPlaying = true;
       await this.fadeIn(fadeDuration);
-      
+
       console.log('[AudioManager] Audio resumed');
     } catch (error) {
       console.error('[AudioManager] Error resuming audio:', error);
@@ -122,7 +122,14 @@ class AudioManager {
 
     this.isMuted = !this.isMuted;
     this.currentAudio.volume = this.isMuted ? 0 : this.volume;
-    
+
+    if (!this.isMuted && this.currentAudio.paused) {
+      // Recover from autoplay block if the user clicks unmute
+      this.currentAudio.play().then(() => {
+        this.isPlaying = true;
+      }).catch(e => console.error('[AudioManager] toggleMute play fallback failed:', e));
+    }
+
     console.log(`[AudioManager] Muted: ${this.isMuted}`);
     return this.isMuted;
   }
@@ -133,11 +140,18 @@ class AudioManager {
    */
   setVolume(vol) {
     this.volume = Math.max(0, Math.min(1, vol));
-    
+
     if (this.currentAudio && !this.isMuted) {
       this.currentAudio.volume = this.volume;
+
+      if (this.volume > 0 && this.currentAudio.paused) {
+        // Recover from autoplay block if the user raises volume
+        this.currentAudio.play().then(() => {
+          this.isPlaying = true;
+        }).catch(e => console.error('[AudioManager] setVolume play fallback failed:', e));
+      }
     }
-    
+
     console.log(`[AudioManager] Volume set to: ${this.volume}`);
   }
 
@@ -161,7 +175,7 @@ class AudioManager {
 
       this.fadeInterval = setInterval(() => {
         currentStep++;
-        
+
         if (currentStep >= steps) {
           this.currentAudio.volume = this.isMuted ? 0 : this.volume;
           this.clearFade();
@@ -195,7 +209,7 @@ class AudioManager {
 
       this.fadeInterval = setInterval(() => {
         currentStep++;
-        
+
         if (currentStep >= steps) {
           this.currentAudio.volume = 0;
           this.clearFade();
@@ -223,12 +237,12 @@ class AudioManager {
    */
   handleError(error) {
     console.error('[AudioManager] Audio error:', error);
-    
+
     // Retry logic
     if (this.retryCount < this.maxRetries) {
       this.retryCount++;
       console.log(`[AudioManager] Retrying... (${this.retryCount}/${this.maxRetries})`);
-      
+
       setTimeout(() => {
         if (this.currentAudio && this.currentTheme) {
           this.currentAudio.play().catch(err => {
@@ -272,15 +286,15 @@ class AudioManager {
    */
   cleanup() {
     this.clearFade();
-    
+
     if (this.currentAudio) {
       this.currentAudio.pause();
       this.currentAudio = null;
     }
-    
+
     this.currentTheme = null;
     this.isPlaying = false;
-    
+
     console.log('[AudioManager] Cleaned up');
   }
 }

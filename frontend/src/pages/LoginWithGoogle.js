@@ -8,9 +8,24 @@ import { toast } from 'sonner';
 const USE_GOOGLE_OAUTH = process.env.REACT_APP_USE_GOOGLE_OAUTH === 'true';
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
+const QUOTES = [
+  { text: "A reader lives a thousand lives before he dies. The man who never reads lives only one.", author: "George R.R. Martin" },
+  { text: "Books are a uniquely portable magic.", author: "Stephen King" },
+  { text: "There is no friend as loyal as a book.", author: "Ernest Hemingway" },
+  { text: "Reading is to the mind what exercise is to the body.", author: "Joseph Addison" },
+  { text: "One must always be careful of books, for words have the power to change us.", author: "Cassandra Clare" },
+  { text: "I have always imagined that Paradise will be a kind of library.", author: "Jorge Luis Borges" },
+  { text: "A room without books is like a body without a soul.", author: "Marcus Tullius Cicero" },
+  { text: "The more that you read, the more things you will know.", author: "Dr. Seuss" },
+  { text: "Sleep is good, he said, and books are better.", author: "George R.R. Martin" },
+  { text: "Reading gives us someplace to go when we have to stay where we are.", author: "Mason Cooley" },
+];
+
 const LoginWithGoogle = () => {
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
+  const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * QUOTES.length));
+  const [quoteVisible, setQuoteVisible] = useState(true);
 
   useEffect(() => {
     setMounted(true);
@@ -85,6 +100,18 @@ const LoginWithGoogle = () => {
     }
   }, [navigate, handleGoogleCallback]);
 
+  // Rotate quotes every 6 seconds with fade
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setQuoteVisible(false);
+      setTimeout(() => {
+        setQuoteIndex((prev) => (prev + 1) % QUOTES.length);
+        setQuoteVisible(true);
+      }, 500); // fade-out duration
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleEmergentLogin = () => {
     const redirectUrl = window.location.origin + '/dashboard';
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
@@ -95,6 +122,8 @@ const LoginWithGoogle = () => {
     { icon: Flame, label: 'Streaks', desc: 'Track your consistency', delay: '200ms' },
     { icon: Sparkles, label: 'Focus', desc: 'Distraction-free mode', delay: '300ms' },
   ];
+
+  const quote = QUOTES[quoteIndex];
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-[#F8F6F1] flex flex-col items-center justify-center p-4 md:p-6">
@@ -115,9 +144,24 @@ const LoginWithGoogle = () => {
           <h1 className="text-4xl md:text-5xl font-bold text-[#2C2A27] mb-3 tracking-tight" style={{ fontFamily: 'Playfair Display, serif' }}>
             Immersive
           </h1>
-          <p className="text-[#6A645C] text-lg font-medium" style={{ fontFamily: 'Lora, serif' }}>
+          <p className="text-[#6A645C] text-lg font-medium mb-6" style={{ fontFamily: 'Lora, serif' }}>
             Your portal to deep reading.
           </p>
+
+          {/* Dynamic Quote Section */}
+          <div className="min-h-[80px] flex items-center justify-center border-t border-[#E8E3D9] pt-6 mt-2">
+            <div
+              className="transition-opacity duration-500"
+              style={{ opacity: quoteVisible ? 1 : 0 }}
+            >
+              <p className="text-[#2C2A27] text-sm md:text-base italic leading-relaxed" style={{ fontFamily: 'Lora, serif' }}>
+                &ldquo;{quote.text}&rdquo;
+              </p>
+              <p className="text-[#9B948B] text-[10px] md:text-xs mt-2 uppercase tracking-widest font-medium">
+                — {quote.author}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Value Prop Cards - Staggered Grid */}

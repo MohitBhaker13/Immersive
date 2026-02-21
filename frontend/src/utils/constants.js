@@ -22,7 +22,7 @@ export const SOUND_THEMES = {
     name: 'Fantasy',
     description: 'Cinematic ambient, forest ambience, magical tones',
     tracks: [
-      { url: 'https://assets.mixkit.co/active_storage/sfx/2466/2466-preview.mp3', name: 'Mystical Forest', duration: 60 },
+      { url: 'https://www.chosic.com/wp-content/uploads/2020/09/Old-Library-Ambience.mp3', name: 'Ancient Magic', duration: 300 },
     ],
     color: '#6B8E23',
     icon: '🌲',
@@ -36,9 +36,9 @@ export const SOUND_THEMES = {
   },
   Romance: {
     name: 'Romance',
-    description: 'Soft piano, warm instrumental, gentle melodies',
+    description: 'Rainy jazz, warm instrumental, gentle melodies',
     tracks: [
-      { url: 'https://assets.mixkit.co/active_storage/sfx/2457/2457-preview.mp3', name: 'Tender Moments', duration: 60 },
+      { url: 'https://www.chosic.com/wp-content/uploads/2021/03/Detective-Mystery-Ambient.mp3', name: 'Midnight Jazz', duration: 180 },
     ],
     color: '#FF69B4',
     icon: '💕',
@@ -52,9 +52,9 @@ export const SOUND_THEMES = {
   },
   SciFi: {
     name: 'Sci-Fi',
-    description: 'Futuristic ambient, space drone, electronic textures',
+    description: 'Futuristic ambient, deep drone, electronic textures',
     tracks: [
-      { url: 'https://assets.mixkit.co/active_storage/sfx/2473/2473-preview.mp3', name: 'Space Odyssey', duration: 60 },
+      { url: 'https://www.chosic.com/wp-content/uploads/2021/04/Cyberpunk-City-Neon-Ambience.mp3', name: 'Deep Space Drone', duration: 180 },
     ],
     color: '#4169E1',
     icon: '🚀',
@@ -70,7 +70,7 @@ export const SOUND_THEMES = {
     name: 'Thriller',
     description: 'Tension building, suspenseful tones, mysterious atmosphere',
     tracks: [
-      { url: 'https://assets.mixkit.co/active_storage/sfx/2482/2482-preview.mp3', name: 'Edge of Suspense', duration: 60 },
+      { url: 'https://www.chosic.com/wp-content/uploads/2021/07/Dark-Ambience-1.mp3', name: 'Edge of Suspense', duration: 120 },
     ],
     color: '#8B0000',
     icon: '🔪',
@@ -166,9 +166,9 @@ export const SOUND_THEMES = {
   },
   Calm: {
     name: 'Calm',
-    description: 'Gentle ambient, soft nature sounds, peaceful vibes',
+    description: 'Gentle ambient, soft background sounds, peaceful vibes',
     tracks: [
-      { url: 'https://assets.mixkit.co/active_storage/sfx/2466/2466-preview.mp3', name: 'Peaceful Mind', duration: 60 },
+      { url: 'https://www.chosic.com/wp-content/uploads/2021/05/Lofi-Study-Music.mp3', name: 'Peaceful Mind', duration: 210 },
     ],
     color: '#87CEEB',
     icon: '☁️',
@@ -182,9 +182,9 @@ export const SOUND_THEMES = {
   },
   Cozy: {
     name: 'Cozy',
-    description: 'Rain sounds, fireplace crackle, warm ambience',
+    description: 'Rain sounds, heavy ambient, warm vibes',
     tracks: [
-      { url: 'https://assets.mixkit.co/active_storage/sfx/2457/2457-preview.mp3', name: 'Cozy Corner', duration: 60 },
+      { url: 'https://www.chosic.com/wp-content/uploads/2020/06/Rain-and-Thunder.mp3', name: 'Cozy Rain', duration: 240 },
     ],
     color: '#D2691E',
     icon: '☕',
@@ -198,9 +198,9 @@ export const SOUND_THEMES = {
   },
   Epic: {
     name: 'Epic',
-    description: 'Cinematic orchestral, grand ambience, adventure',
+    description: 'Deep orchestral tones, grand ambience, heavy strings',
     tracks: [
-      { url: 'https://assets.mixkit.co/active_storage/sfx/2466/2466-preview.mp3', name: 'Epic Journey', duration: 60 },
+      { url: 'https://www.chosic.com/wp-content/uploads/2021/07/Dark-Ambience-1.mp3', name: 'Epic Journey', duration: 120 },
     ],
     color: '#FFD700',
     icon: '⚔️',
@@ -214,9 +214,9 @@ export const SOUND_THEMES = {
   },
   Study: {
     name: 'Study',
-    description: 'Cafe ambience, soft background, productive atmosphere',
+    description: 'Lo-Fi beats, soft background, productive atmosphere',
     tracks: [
-      { url: 'https://assets.mixkit.co/active_storage/sfx/2457/2457-preview.mp3', name: 'Study Session', duration: 60 },
+      { url: 'https://www.chosic.com/wp-content/uploads/2021/05/Lofi-Study-Music.mp3', name: 'Deep Focus', duration: 210 },
     ],
     color: '#8B4513',
     icon: '📚',
