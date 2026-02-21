@@ -31,8 +31,14 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {},
                 credentials: 'include',
             });
-            if (res.ok) setUsage(await res.json());
-        } catch { /* silent */ }
+            if (res.ok) {
+                setUsage(await res.json());
+            } else {
+                console.error(`Chat usage fetch failed: ${res.status} ${res.statusText}`);
+            }
+        } catch (err) {
+            console.error('Chat usage fetch error:', err);
+        }
     }, []);
 
     // Poll usage when info panel is open
