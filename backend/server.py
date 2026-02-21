@@ -13,6 +13,10 @@ from datetime import datetime, timezone, timedelta
 import requests
 import json
 from google import genai
+from google.genai import types
+from collections import defaultdict
+import time
+import re
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -156,6 +160,7 @@ class ChatRequest(BaseModel):
     book_id: str
     question: str
     history: List[ChatMessage] = []
+    spoiler_unlocked: bool = False  # Sent from frontend spoiler lock toggle
 
 # ==================== AUTH HELPERS ====================
 
@@ -853,6 +858,94 @@ async def get_calendar(request: Request, session_token: Optional[str] = Cookie(N
 gemini_api_key = os.environ.get('GEMINI_API_KEY', '')
 gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and gemini_api_key != 'your-gemini-api-key-here' else None
 
+# --- Chat Guardrails ---
+
+# Per-user rate limiting (in-memory)
+_chat_rate_limit = defaultdict(list)  # user_id -> [timestamps]
+CHAT_RATE_LIMIT = 20       # max requests
+CHAT_RATE_WINDOW = 300     # per 5 minutes
+MAX_HISTORY = 20           # cap conversation history
+MAX_QUESTION_LENGTH = 500  # max user input length
+
+def check_chat_rate_limit(user_id: str):
+    """Simple sliding-window rate limiter for the chat endpoint."""
+    now = time.time()
+    _chat_rate_limit[user_id] = [
+        t for t in _chat_rate_limit[user_id] if now - t < CHAT_RATE_WINDOW
+    ]
+    if len(_chat_rate_limit[user_id]) >= CHAT_RATE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail="You've sent too many messages. Please wait a few minutes."
+        )
+    _chat_rate_limit[user_id].append(now)
+
+def is_post_cutoff_book(book: dict) -> bool:
+    """Heuristic: flag books published after the model's training cutoff (2024+)."""
+    pub_date = book.get("published_date") or ""
+    if not pub_date:
+        return False
+    try:
+        year = int(pub_date[:4])
+        return year >= 2025
+    except (ValueError, IndexError):
+        return False
+
+def fetch_book_context_sync(book: dict) -> str:
+    """
+    Fetch extended metadata from Google Books API to inject as grounding context.
+    Only called for books flagged as potentially unknown.
+    """
+    google_id = book.get("google_books_id")
+    if not google_id:
+        return ""
+    try:
+        url = f"https://www.googleapis.com/books/v1/volumes/{google_id}"
+        resp = requests.get(url, timeout=10)
+        if resp.status_code != 200:
+            return ""
+        data = resp.json()
+        info = data.get("volumeInfo", {})
+
+        desc = info.get("description", "")
+        if desc:
+            desc = re.sub('<[^<]+?>', '', desc)  # strip HTML
+
+        context_parts = []
+        if desc:
+            context_parts.append(f"Full Description: {desc[:2000]}")
+        if info.get("categories"):
+            context_parts.append(f"Categories: {', '.join(info['categories'])}")
+        if info.get("publishedDate"):
+            context_parts.append(f"Published: {info['publishedDate']}")
+        if info.get("publisher"):
+            context_parts.append(f"Publisher: {info['publisher']}")
+        if info.get("pageCount"):
+            context_parts.append(f"Pages: {info['pageCount']}")
+        return "\n".join(context_parts)
+    except Exception:
+        return ""
+
+# Chat safety settings — permissive for literary discussion
+CHAT_SAFETY_SETTINGS = [
+    types.SafetySetting(
+        category="HARM_CATEGORY_HATE_SPEECH",
+        threshold="BLOCK_ONLY_HIGH",
+    ),
+    types.SafetySetting(
+        category="HARM_CATEGORY_HARASSMENT",
+        threshold="BLOCK_ONLY_HIGH",
+    ),
+    types.SafetySetting(
+        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        threshold="BLOCK_ONLY_HIGH",
+    ),
+    types.SafetySetting(
+        category="HARM_CATEGORY_DANGEROUS_CONTENT",
+        threshold="BLOCK_ONLY_HIGH",
+    ),
+]
+
 @api_router.post("/chat")
 async def chat_with_book(chat_req: ChatRequest, request: Request, session_token: Optional[str] = Cookie(None)):
     """AI-powered book companion chat — streams responses via SSE"""
@@ -860,6 +953,14 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
 
     if not gemini_client:
         raise HTTPException(status_code=503, detail="AI chat not configured. Please set GEMINI_API_KEY in .env")
+
+    # --- Guardrail: Per-user rate limiting ---
+    check_chat_rate_limit(user["user_id"])
+
+    # --- Guardrail: Input sanitization ---
+    question = chat_req.question.strip()[:MAX_QUESTION_LENGTH]
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
 
     # Fetch book metadata
     book = await db.books.find_one(
@@ -869,42 +970,118 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    # Build system prompt with book context
-    system_prompt = (
-        f'You are a literary companion for the book "{book["title"]}" by {book["author"]}.\n'
-        f'Genre: {book.get("genre", "General")}.\n'
-        f'Description: {book.get("description", "No description available.")}.\n\n'
-        'You help readers recall characters, plot points, themes, and context.\n'
-        'Rules:\n'
-        '- Keep answers concise (2-3 short paragraphs max).\n'
-        '- Avoid major spoilers unless the user explicitly asks for them.\n'
-        '- Stay warm and encouraging, like a fellow book-lover.\n'
-        '- If you are unsure about specific details, say so honestly.\n'
-        '- Format your response in plain text, not markdown.'
+    # --- Guardrail: Read spoiler toggle state ---
+    spoiler_unlocked = chat_req.spoiler_unlocked
+
+    # --- Build hardened system prompt ---
+    spoiler_rule = (
+        'OFF — the user has unlocked spoilers. You may discuss the full plot freely, '
+        'including endings, deaths, betrayals, and twists.'
+        if spoiler_unlocked
+        else
+        'ON (default). Follow these rules:\n'
+        '   - If asked "Who is [Character]?", describe their introduction and role only.\n'
+        '   - Do NOT reveal deaths, betrayals, or ending twists.\n'
+        '   - If a question requires spoiler information to answer properly, respond: '
+        '"That would involve spoilers! You can toggle the \U0001f513 Spoiler Lock off '
+        'in the chat header to unlock full details."\n'
+        '   - If unsure whether info is a spoiler, err on the side of caution.'
     )
+
+    system_prompt = (
+        f'Role: Literary Assistant for "{book["title"]}" by {book["author"]}.\n'
+        f'Genre: {book.get("genre", "General")}.\n'
+        f'Description: {book.get("description", "No description available.")}.\n'
+        f'Context: The user is currently reading this book physically.\n'
+        f'Goal: Provide context on characters, plot points, and themes '
+        f'based on verified literary data.\n\n'
+
+        'Operational Rules:\n'
+        '1. HALLUCINATION GUARD: If a detail is not part of the widely accepted '
+        f'plot or character summary of "{book["title"]}", state: '
+        '"I don\'t have enough specific detail in my records to confirm that. '
+        'You might find the answer in your current chapters." '
+        'Do NOT invent plot points, character relationships, or quotes.\n\n'
+
+        f'2. SPOILER MANAGEMENT: Spoiler lock is currently {spoiler_rule}\n\n'
+
+        '3. CONCISENESS: Maximum 2 paragraphs. No conversational filler '
+        '(e.g., "I\'d be happy to help", "Great question!").\n\n'
+
+        '4. FORMATTING: Use **bold** for character names and *italics* for book '
+        'titles. Use bullet points for lists of traits or events.\n\n'
+
+        '5. SCOPE: If the user asks about topics unrelated to '
+        f'"{book["title"]}" or literature, respond: '
+        f'"I am currently focused on your reading of *{book["title"]}*. '
+        'How can I help with the story?"\n\n'
+
+        '6. UNCERTAINTY: When you are not confident about a specific detail, '
+        'explicitly say so. Never present uncertain information as fact.'
+    )
+
+    # --- Guardrail: Unknown book detection + context injection ---
+    is_potentially_unknown = (
+        not book.get("google_books_id")
+        or not book.get("description")
+    )
+
+    if is_potentially_unknown:
+        system_prompt += (
+            '\n\n7. LOW-CONFIDENCE MODE: This book may not be in your training data. '
+            'Be extra cautious. Preface answers with "Based on what I know..." '
+            'and recommend the user verify details in their copy.'
+        )
+        # Long Context Injection — fetch rich metadata from Google Books
+        extra_context = fetch_book_context_sync(book)
+        if extra_context:
+            system_prompt += (
+                f'\n\nVERIFIED BOOK DATA (from Google Books — use this as ground truth):\n'
+                f'{extra_context}'
+            )
+
+    # --- Guardrail: Google Search Grounding for post-cutoff books ---
+    tools = None
+    if is_post_cutoff_book(book):
+        tools = [types.Tool(google_search=types.GoogleSearch())]
+        system_prompt += (
+            '\n\n8. SEARCH-GROUNDED MODE: This book was published recently. '
+            'Use the Google Search tool to verify facts before answering. '
+            'Cite sources when referencing reviews or summaries found online.'
+        )
+        logging.info(f"Chat: Google Search Grounding enabled for post-cutoff book '{book['title']}'")
+
+    # --- Guardrail: Cap conversation history ---
+    trimmed_history = chat_req.history[-MAX_HISTORY:]
 
     # Build conversation for Gemini
     contents = []
-    for msg in chat_req.history:
+    for msg in trimmed_history:
         contents.append({
             "role": "user" if msg.role == "user" else "model",
             "parts": [{"text": msg.content}]
         })
     contents.append({
         "role": "user",
-        "parts": [{"text": chat_req.question}]
+        "parts": [{"text": question}]
     })
+
+    # Build model config
+    gen_config = {
+        "system_instruction": system_prompt,
+        "temperature": 0.1,
+        "max_output_tokens": 512,
+        "safety_settings": CHAT_SAFETY_SETTINGS,
+    }
+    if tools:
+        gen_config["tools"] = tools
 
     async def generate_stream():
         try:
             response = gemini_client.models.generate_content_stream(
                 model="gemini-2.5-flash",
                 contents=contents,
-                config={
-                    "system_instruction": system_prompt,
-                    "temperature": 0.7,
-                    "max_output_tokens": 1024,
-                }
+                config=gen_config,
             )
             for chunk in response:
                 if chunk.text:

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Send, BookOpen, Sparkles } from 'lucide-react';
+import { X, Send, BookOpen, Sparkles, Lock, Unlock } from 'lucide-react';
 import { SOUND_THEMES } from '@/utils/constants';
 
 const QUICK_PROMPTS = [
@@ -15,6 +15,21 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
     const panelRef = useRef(null);
+
+    // Spoiler lock toggle — ON (locked) by default
+    const [spoilerLocked, setSpoilerLocked] = useState(true);
+
+    // Simple inline markdown renderer for model output
+    const renderMarkdown = (text) => {
+        if (!text) return '';
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/^- (.+)$/gm, '• $1');
+    };
 
     const themeUI = SOUND_THEMES[currentTheme]?.ui || {};
     const accent = themeUI.accent || '#A68A64';
@@ -59,6 +74,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                     book_id: book.book_id,
                     question: question.trim(),
                     history: messages.filter(m => !m.streaming).map(m => ({ role: m.role, content: m.content })),
+                    spoiler_unlocked: !spoilerLocked,
                 }),
             });
 
@@ -193,6 +209,27 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                     </button>
                 </div>
 
+                {/* Spoiler Lock Toggle + Unknown Book Warning */}
+                <div className="px-4 pt-2 flex items-center gap-2">
+                    <button
+                        onClick={() => setSpoilerLocked(!spoilerLocked)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-medium transition-all"
+                        style={{
+                            backgroundColor: spoilerLocked ? accent + '15' : '#ef4444' + '20',
+                            color: spoilerLocked ? textColor : '#ef4444',
+                        }}
+                        title={spoilerLocked ? 'Spoiler Lock ON — click to unlock' : 'Spoilers UNLOCKED — click to lock'}
+                    >
+                        {spoilerLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                        {spoilerLocked ? 'Spoiler Safe' : 'Spoilers On'}
+                    </button>
+                    {(!book?.google_books_id || !book?.description) && (
+                        <span className="text-[9px] opacity-50" style={{ color: textColor }}>
+                            ⚠️ Limited data for this title
+                        </span>
+                    )}
+                </div>
+
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0" style={{ scrollbarWidth: 'none' }}>
                     {messages.length === 0 && (
@@ -246,7 +283,11 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                                     fontFamily: 'Lora, serif',
                                 }}
                             >
-                                {msg.content}
+                                {msg.role === 'assistant' && !msg.error ? (
+                                    <span dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                                ) : (
+                                    msg.content
+                                )}
                                 {msg.streaming && !msg.content && (
                                     <div className="flex items-center gap-1.5 py-1">
                                         <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: accent, animationDelay: '0ms' }} />
