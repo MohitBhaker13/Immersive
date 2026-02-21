@@ -11,6 +11,17 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { GENRE_OPTIONS, GENRE_TO_THEME, MOOD_OPTIONS, SOUND_THEMES } from '@/utils/constants';
 
+const BOOK_QUOTES = [
+  { text: "A reader lives a thousand lives before he dies. The man who never reads lives only one.", author: "George R.R. Martin", book: "A Dance with Dragons" },
+  { text: "There is no friend as loyal as a book.", author: "Ernest Hemingway", book: "The Old Man and the Sea" },
+  { text: "We read to know we are not alone.", author: "C.S. Lewis", book: "Shadowlands" },
+  { text: "Books are a uniquely portable magic.", author: "Stephen King", book: "On Writing" },
+  { text: "That is part of the beauty of all literature. You discover that your longings are universal longings, that you're not lonely and isolated from anyone.", author: "F. Scott Fitzgerald" },
+  { text: "If you only read the books that everyone else is reading, you can only think what everyone else is thinking.", author: "Haruki Murakami", book: "Norwegian Wood" },
+  { text: "A room without books is like a body without a soul.", author: "Marcus Tullius Cicero" },
+  { text: "Fairy tales are more than true: not because they tell us that dragons exist, but because they tell us that dragons can be beaten.", author: "Neil Gaiman", book: "Coraline" },
+];
+
 const Dashboard = ({ user }) => {
   const navigate = useNavigate();
   const [books, setBooks] = useState([]);
@@ -24,6 +35,8 @@ const Dashboard = ({ user }) => {
     sound_theme: 'Focus',
     duration_minutes: user?.daily_goal_minutes || 30,
   });
+
+  const [dailyQuote, setDailyQuote] = useState(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -48,6 +61,7 @@ const Dashboard = ({ user }) => {
 
   useEffect(() => {
     loadDashboardData();
+    setDailyQuote(BOOK_QUOTES[Math.floor(Math.random() * BOOK_QUOTES.length)]);
   }, []);
 
   // Sync sound theme when selected book changes
@@ -120,6 +134,9 @@ const Dashboard = ({ user }) => {
   };
 
   const currentlyReading = books.filter((b) => b.status === 'currently_reading');
+  const completedSessions = sessions.filter((s) => s.ended_at);
+  const totalMinutesRead = completedSessions.reduce((acc, s) => acc + (s.actual_minutes || 0), 0);
+
   const lastSession = sessions[0];
   const continueBook = lastSession ? books.find((b) => b.book_id === lastSession.book_id) : currentlyReading[0];
 
@@ -229,8 +246,45 @@ const Dashboard = ({ user }) => {
     return (
       <div className="min-h-screen bg-[#F8F6F1]">
         <Navigation currentPage="dashboard" />
-        <div className="flex items-center justify-center h-96">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-[#A68A64] border-r-transparent"></div>
+        <div className="max-w-[720px] mx-auto px-4 md:px-8 py-6 md:py-12">
+          {/* Greeting skeleton */}
+          <div className="mb-8 md:mb-12">
+            <div className="skeleton h-10 w-64 mb-3"></div>
+            <div className="skeleton h-5 w-48"></div>
+          </div>
+          {/* Streak card skeleton */}
+          <div className="card-paper p-4 md:p-8 mb-6 md:mb-12">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="skeleton w-14 h-14 md:w-16 md:h-16 rounded-full"></div>
+                <div>
+                  <div className="skeleton h-9 w-12 mb-2"></div>
+                  <div className="skeleton h-3 w-20"></div>
+                </div>
+              </div>
+              <div className="flex space-x-2">
+                {[...Array(7)].map((_, i) => <div key={i} className="skeleton w-8 h-8 md:w-11 md:h-11 rounded-full"></div>)}
+              </div>
+            </div>
+          </div>
+          {/* Continue reading skeleton */}
+          <div className="card-paper p-4 md:p-8 mb-6 md:mb-8">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="skeleton h-3 w-28 mb-2"></div>
+                <div className="skeleton h-7 w-48 mb-2"></div>
+                <div className="skeleton h-4 w-32 mb-4"></div>
+                <div className="skeleton h-10 w-28 rounded-md"></div>
+              </div>
+              <div className="skeleton w-16 h-24 md:w-32 md:h-44 rounded"></div>
+            </div>
+          </div>
+          {/* Stats skeleton */}
+          <div className="grid grid-cols-3 gap-3 md:gap-6">
+            <div className="card-paper p-4 md:p-6"><div className="skeleton h-8 w-10 mb-2"></div><div className="skeleton h-4 w-20"></div></div>
+            <div className="card-paper p-4 md:p-6"><div className="skeleton h-8 w-10 mb-2"></div><div className="skeleton h-4 w-20"></div></div>
+            <div className="card-paper p-4 md:p-6"><div className="skeleton h-8 w-10 mb-2"></div><div className="skeleton h-4 w-20"></div></div>
+          </div>
         </div>
       </div>
     );
@@ -240,12 +294,32 @@ const Dashboard = ({ user }) => {
     <div className="min-h-screen bg-[#F8F6F1] paper-texture pb-20 md:pb-0">
       <Navigation currentPage="dashboard" />
 
-      <div className="max-w-[720px] mx-auto px-4 md:px-8 py-6 md:py-12">
+      <div className="max-w-[720px] mx-auto px-4 md:px-8 py-6 md:py-12 page-enter">
         <div className="mb-8 md:mb-12">
           <h1 className="text-3xl md:text-5xl font-bold text-[#2C2A27] mb-2" style={{ fontFamily: 'Playfair Display, serif' }}>
             Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 18 ? 'Afternoon' : 'Evening'}
           </h1>
-          <p className="text-[#6A645C] text-base md:text-lg" style={{ fontFamily: 'Lora, serif' }}>Ready to immerse yourself?</p>
+          <p className="text-[#6A645C] text-base md:text-lg mb-6 md:mb-8" style={{ fontFamily: 'Lora, serif' }}>Ready to immerse yourself?</p>
+
+          {dailyQuote && (
+            <div className="bg-[#fcfaf7] border border-[#E8E3D9]/60 rounded-xl p-4 md:p-6 mb-6 md:mb-8 animate-in fade-in slide-in-from-bottom-2 duration-700 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[#A68A64]/10 to-transparent rounded-bl-full opacity-50 transition-opacity group-hover:opacity-100"></div>
+              <div className="relative">
+                <span className="text-[#A68A64] text-2xl md:text-3xl absolute -top-1 -left-1 opacity-50 font-serif">"</span>
+                <p className="text-[#6A645C] text-sm md:text-base italic leading-relaxed pl-4 pr-2" style={{ fontFamily: 'Lora, serif' }}>
+                  {dailyQuote.text}
+                </p>
+                <div className="mt-3 md:mt-4 pl-4 text-xs md:text-sm">
+                  <span className="font-semibold text-[#2C2A27]" style={{ fontFamily: 'Playfair Display, serif' }}>— {dailyQuote.author}</span>
+                  {dailyQuote.book && (
+                    <span className="text-[#9B948B] ml-1">
+                      in <cite style={{ fontFamily: 'Lora, serif' }}>{dailyQuote.book}</cite>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="card-paper p-4 md:p-8 mb-6 md:mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
@@ -351,14 +425,18 @@ const Dashboard = ({ user }) => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 md:gap-6 mb-6">
-          <div className="card-paper p-5 md:p-6">
+        <div className="grid grid-cols-3 gap-3 md:gap-6 mb-6">
+          <div className="card-paper p-4 md:p-6">
             <div className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>{books.length}</div>
-            <div className="text-[#6A645C] text-sm">Books in library</div>
+            <div className="text-[#6A645C] text-xs md:text-sm">Books</div>
           </div>
-          <div className="card-paper p-5 md:p-6">
-            <div className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>{sessions.length}</div>
-            <div className="text-[#6A645C] text-sm">Total sessions</div>
+          <div className="card-paper p-4 md:p-6">
+            <div className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>{completedSessions.length}</div>
+            <div className="text-[#6A645C] text-xs md:text-sm">Sessions</div>
+          </div>
+          <div className="card-paper p-4 md:p-6">
+            <div className="text-2xl md:text-3xl font-bold text-[#2C2A27] mb-1" style={{ fontFamily: 'Playfair Display, serif' }}>{totalMinutesRead}</div>
+            <div className="text-[#6A645C] text-xs md:text-sm">Minutes</div>
           </div>
         </div>
 
@@ -450,7 +528,7 @@ const Dashboard = ({ user }) => {
               <Select value={sessionForm.duration_minutes.toString()} onValueChange={(val) => setSessionForm({ ...sessionForm, duration_minutes: parseInt(val) })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {[15, 30, 45, 60, 90, 120].map((min) => (
+                  {[1, 5, 10, 15, 30, 45, 60, 90, 120].map((min) => (
                     <SelectItem key={min} value={min.toString()}>{min} minutes</SelectItem>
                   ))}
                 </SelectContent>
