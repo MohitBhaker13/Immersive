@@ -155,7 +155,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
         } finally {
             setIsStreaming(false);
         }
-    }, [book, messages, isStreaming]);
+    }, [book, messages, isStreaming, spoilerLocked]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
