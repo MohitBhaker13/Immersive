@@ -13,6 +13,27 @@ class AudioManager {
     this.fadeInterval = null;
     this.retryCount = 0;
     this.maxRetries = 3;
+    this.cache = new Map(); // theme identifier -> Audio object
+  }
+
+  /**
+   * Preload audio without playing
+   * @param {string} theme - Theme identifier
+   * @param {string} audioUrl - URL of the audio file
+   */
+  preload(theme, audioUrl) {
+    if (this.cache.has(theme)) return;
+
+    try {
+      const audio = new Audio(audioUrl);
+      audio.preload = 'auto';
+      audio.loop = true;
+      audio.volume = 0;
+      this.cache.set(theme, audio);
+      console.log(`[AudioManager] Preloading theme: ${theme}`);
+    } catch (error) {
+      console.error('[AudioManager] Preload failed:', error);
+    }
   }
 
   /**
@@ -23,34 +44,50 @@ class AudioManager {
    */
   async play(theme, audioUrl, fadeDuration = 2000) {
     try {
-      // Stop current audio if playing
-      if (this.currentAudio) {
-        await this.stop(1000);
+      // If we're already playing this exact track/theme, just ensure it's unmuted and playing
+      if (this.currentTheme === theme && this.currentAudio && !this.currentAudio.paused) {
+        if (this.isMuted) this.toggleMute();
+        return;
+      }
+
+      // Stop current audio if playing something else
+      if (this.currentAudio && this.currentTheme !== theme) {
+        await this.stop(500); // Shorter fade for quicker swaps
       }
 
       this.currentTheme = theme;
-      this.currentAudio = new Audio(audioUrl);
-      this.currentAudio.loop = true;
+
+      // Check cache first
+      if (this.cache.has(theme)) {
+        this.currentAudio = this.cache.get(theme);
+        console.log(`[AudioManager] Using cached audio for: ${theme}`);
+      } else {
+        this.currentAudio = new Audio(audioUrl);
+        this.currentAudio.loop = true;
+        this.currentAudio.preload = 'auto';
+        this.cache.set(theme, this.currentAudio);
+      }
+
       this.currentAudio.volume = 0;
 
-      // Preload audio
-      this.currentAudio.preload = 'auto';
-
-      // Add error handling
+      // Add/Verify error handling
+      this.currentAudio.removeEventListener('error', this.handleError);
       this.currentAudio.addEventListener('error', this.handleError.bind(this));
 
-      // Add ended event (in case loop fails)
+      this.currentAudio.removeEventListener('ended', this.handleEnded);
       this.currentAudio.addEventListener('ended', this.handleEnded.bind(this));
 
       // Try to play
-      await this.currentAudio.play();
+      const playPromise = this.currentAudio.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+      }
       this.isPlaying = true;
 
       // Fade in
       await this.fadeIn(fadeDuration);
 
-      this.retryCount = 0; // Reset retry count on success
-
+      this.retryCount = 0;
       console.log(`[AudioManager] Playing theme: ${theme}`);
     } catch (error) {
       console.error('[AudioManager] Failed to play audio:', error);

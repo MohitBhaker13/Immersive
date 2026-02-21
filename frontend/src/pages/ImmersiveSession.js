@@ -81,6 +81,17 @@ const ImmersiveSession = () => {
     if (hasLoaded.current) return;
     hasLoaded.current = true;
 
+    // Proactively start loading audio if we have a cached theme for this session
+    const savedTheme = sessionStorage.getItem(`theme_${sessionId}`);
+    if (savedTheme && SOUND_THEMES[savedTheme]) {
+      const track = getRandomTrack(savedTheme);
+      if (track) {
+        audioManager.play(savedTheme, track.url, 2000);
+        setCurrentTheme(savedTheme);
+        setSoundEnabled(true);
+      }
+    }
+
     try {
       const [sessionRes, booksRes] = await Promise.all([
         api.get('/sessions'),
@@ -109,17 +120,19 @@ const ImmersiveSession = () => {
       const sessionBook = booksRes.data.find((b) => b.book_id === currentSession.book_id);
       setBook(sessionBook);
 
-      // Prioritize the user's manually selected theme for this session, otherwise fallback to the original session theme
-      const savedTheme = sessionStorage.getItem(`theme_${sessionId}`);
-      const themeToPlay = savedTheme || currentSession.sound_theme;
+      // Update theme if it differs from the early-hint or if no hint was available
+      const themeToPlay = sessionStorage.getItem(`theme_${sessionId}`) || currentSession.sound_theme;
 
-      if (themeToPlay && SOUND_THEMES[themeToPlay]) {
+      if (themeToPlay && SOUND_THEMES[themeToPlay] && themeToPlay !== currentTheme) {
         setCurrentTheme(themeToPlay);
         const track = getRandomTrack(themeToPlay);
         if (track) {
           await audioManager.play(themeToPlay, track.url, 2000);
           setSoundEnabled(true);
         }
+      } else if (!themeToPlay && !currentTheme) {
+        // Fallback for sessions with no theme specified
+        setSoundEnabled(false);
       }
     } catch (error) {
       console.error('Failed to load session:', error);
@@ -303,10 +316,11 @@ const ImmersiveSession = () => {
         <button
           data-testid="exit-session-btn"
           onClick={handleExit}
-          className="transition-colors duration-500 p-2"
+          className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all duration-300 hover:bg-black/5 active:scale-95 group"
           style={{ color: SOUND_THEMES[currentTheme]?.ui?.accent || '#6A645C' }}
+          title="Exit Session"
         >
-          <X className="w-5 h-5 md:w-6 md:h-6" />
+          <X className="w-5 h-5 md:w-6 md:h-6 group-hover:scale-110 transition-transform" />
         </button>
       </div>
 
@@ -369,7 +383,7 @@ const ImmersiveSession = () => {
         {/* Atmosphere Button */}
         <button
           onClick={() => setShowAtmosphereDialog(true)}
-          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border duration-500"
+          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95 border duration-500 group"
           style={{
             backgroundColor: showAtmosphereDialog ? (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64') : 'rgba(255,255,255,0.7)',
             backdropFilter: 'blur(12px)',
@@ -381,7 +395,7 @@ const ImmersiveSession = () => {
           }}
           title="Change atmosphere"
         >
-          <Music className="w-6 h-6 md:w-5 md:h-5" />
+          <Music className="w-6 h-6 md:w-5 md:h-5 transition-transform group-hover:scale-110" />
         </button>
 
         <div
@@ -423,7 +437,7 @@ const ImmersiveSession = () => {
                 e.preventDefault(); // prevent onClick from also firing
               }
             }}
-            className="w-14 h-14 md:w-12 md:h-12 rounded-full border flex items-center justify-center shadow-lg transition-all duration-500 relative z-20"
+            className="w-14 h-14 md:w-12 md:h-12 rounded-full border flex items-center justify-center shadow-lg transition-all duration-500 relative z-20 group"
             style={{
               backgroundColor: 'rgba(255,255,255,0.7)',
               backdropFilter: 'blur(12px)',
@@ -434,12 +448,12 @@ const ImmersiveSession = () => {
           >
             {soundEnabled ? (
               volume > 0.5 ? (
-                <Volume2 className="w-6 h-6 md:w-5 md:h-5" style={{ color: SOUND_THEMES[currentTheme]?.ui?.accent || '#2C2A27' }} />
+                <Volume2 className="w-6 h-6 md:w-5 md:h-5 transition-transform group-hover:scale-110 ml-0.5" style={{ color: SOUND_THEMES[currentTheme]?.ui?.accent || '#2C2A27' }} />
               ) : (
-                <Volume1 className="w-6 h-6 md:w-5 md:h-5" style={{ color: SOUND_THEMES[currentTheme]?.ui?.accent || '#2C2A27' }} />
+                <Volume1 className="w-6 h-6 md:w-5 md:h-5 transition-transform group-hover:scale-110 ml-0.5" style={{ color: SOUND_THEMES[currentTheme]?.ui?.accent || '#2C2A27' }} />
               )
             ) : (
-              <VolumeX className="w-6 h-6 md:w-5 md:h-5 text-[#9B948B]" />
+              <VolumeX className="w-6 h-6 md:w-5 md:h-5 text-[#9B948B] transition-transform group-hover:scale-110" />
             )}
           </button>
 
@@ -475,7 +489,7 @@ const ImmersiveSession = () => {
         <button
           data-testid="add-note-btn"
           onClick={() => setShowNoteDialog(true)}
-          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500 active:scale-95"
+          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500 active:scale-95 group"
           style={{
             backgroundColor: SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64',
             backdropFilter: 'blur(12px)',
@@ -484,13 +498,13 @@ const ImmersiveSession = () => {
           }}
           title="Add note"
         >
-          <StickyNote className="w-6 h-6 md:w-5 md:h-5" />
+          <StickyNote className="w-6 h-6 md:w-5 md:h-5 transition-transform group-hover:scale-110" />
         </button>
 
         {/* Book Companion Chat Button */}
         <button
           onClick={() => setShowCompanionChat(true)}
-          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500 active:scale-95 border-2"
+          className="w-14 h-14 md:w-12 md:h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500 active:scale-95 border-2 group"
           style={{
             backgroundColor: showCompanionChat ? (SOUND_THEMES[currentTheme]?.ui?.accent || '#A68A64') : 'rgba(255,255,255,0.7)',
             backdropFilter: 'blur(12px)',
@@ -502,7 +516,7 @@ const ImmersiveSession = () => {
           }}
           title="Ask about this book"
         >
-          <MessageCircle className="w-6 h-6 md:w-5 md:h-5" />
+          <MessageCircle className="w-6 h-6 md:w-5 md:h-5 transition-transform group-hover:scale-110" />
         </button>
       </div>
 

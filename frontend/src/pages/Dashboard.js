@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { GENRE_OPTIONS, GENRE_TO_THEME, MOOD_OPTIONS, SOUND_THEMES } from '@/utils/constants';
+import { GENRE_OPTIONS, GENRE_TO_THEME, MOOD_OPTIONS, SOUND_THEMES, getRandomTrack } from '@/utils/constants';
+import audioManager from '@/utils/audioManager';
 
 const BOOK_QUOTES = [
   { text: "A reader lives a thousand lives before he dies. The man who never reads lives only one.", author: "George R.R. Martin", book: "A Dance with Dragons" },
@@ -43,7 +44,6 @@ const Dashboard = ({ user }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [showBookDetail, setShowBookDetail] = useState(false);
   const [selectedSearchBook, setSelectedSearchBook] = useState(null);
-  const [previewAudio, setPreviewAudio] = useState(null);
   const [isPlayingPreview, setIsPlayingPreview] = useState(null); // stores theme name
 
   // Debounced search
@@ -76,43 +76,50 @@ const Dashboard = ({ user }) => {
     }
   }, [selectedBook]);
 
+  // Preload suggested theme when dialog opens
+  useEffect(() => {
+    if (showNewSession) {
+      const suggestedTheme = selectedBook?.preferred_theme || GENRE_TO_THEME[selectedBook?.genre] || 'Focus';
+      const track = getRandomTrack(suggestedTheme);
+      if (track) {
+        audioManager.preload(suggestedTheme, track.url);
+      }
+    }
+  }, [showNewSession, selectedBook]);
+
   // Clean up audio on unmount
   useEffect(() => {
     return () => {
-      if (previewAudio) {
-        previewAudio.pause();
-        previewAudio.src = '';
-      }
+      audioManager.cleanup();
     };
-  }, [previewAudio]);
+  }, []);
 
-  const handlePreview = (themeName) => {
+  const handlePreview = async (themeName) => {
     if (isPlayingPreview === themeName) {
-      previewAudio.pause();
+      await audioManager.stop(500);
       setIsPlayingPreview(null);
       return;
-    }
-
-    if (previewAudio) {
-      previewAudio.pause();
     }
 
     const theme = SOUND_THEMES[themeName];
     if (!theme || !theme.tracks.length) return;
 
-    const audio = new Audio(theme.tracks[0].url);
-    audio.volume = 0.5;
-    audio.play();
-    setPreviewAudio(audio);
-    setIsPlayingPreview(themeName);
+    const track = getRandomTrack(themeName);
+    if (track) {
+      setIsPlayingPreview(themeName);
+      await audioManager.play(themeName, track.url, 1500);
 
-    // Stop after 10 seconds
-    setTimeout(() => {
-      if (audio) {
-        audio.pause();
-        setIsPlayingPreview(prev => prev === themeName ? null : prev);
-      }
-    }, 10000);
+      // Auto stop preview after 15 seconds to save bandwidth
+      setTimeout(() => {
+        setIsPlayingPreview(prev => {
+          if (prev === themeName) {
+            audioManager.stop(1000);
+            return null;
+          }
+          return prev;
+        });
+      }, 15000);
+    }
   };
 
   const loadDashboardData = async () => {
@@ -147,8 +154,8 @@ const Dashboard = ({ user }) => {
     }
 
     // Stop preview if playing
-    if (previewAudio) {
-      previewAudio.pause();
+    if (isPlayingPreview) {
+      await audioManager.stop(500);
       setIsPlayingPreview(null);
     }
 
@@ -507,16 +514,16 @@ const Dashboard = ({ user }) => {
                         handlePreview(mood.value);
                       }}
                       className={`
-                        p-2 rounded-full transition-colors
+                        w-10 h-10 flex items-center justify-center rounded-full transition-all duration-300 shadow-sm
                         ${isPlayingPreview === mood.value
                           ? 'bg-[#A68A64] text-white'
-                          : 'text-[#9B948B] hover:bg-[#F4F1EA] hover:text-[#A68A64]'}
+                          : 'bg-white border border-[#E8E3D9] text-[#9B948B] hover:border-[#A68A64] hover:text-[#A68A64]'}
                       `}
                     >
                       {isPlayingPreview === mood.value ? (
-                        <Pause className="w-3.5 h-3.5 fill-current" />
+                        <Pause className="w-4 h-4 fill-current" />
                       ) : (
-                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <Play className="w-4 h-4 fill-current ml-0.5" />
                       )}
                     </button>
                   </div>
