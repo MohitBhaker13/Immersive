@@ -191,7 +191,7 @@ const ImmersiveSession = () => {
       }
     }
     setShowAtmosphereDialog(false);
-  }, [currentTheme, book]);
+  }, [currentTheme, book, sessionId]);
 
   const confirmExit = useCallback(async () => {
     await audioManager.stop(500); // Quick fade out
