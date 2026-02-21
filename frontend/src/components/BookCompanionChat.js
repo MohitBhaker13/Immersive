@@ -223,7 +223,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                         }}
                         title={spoilerLocked ? 'Spoiler Lock ON — click to unlock' : 'Spoilers UNLOCKED — click to lock'}
                     >
-                        {spoilerLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                        {spoilerLocked ? <Lock key="locked" className="w-3.5 h-3.5" /> : <Unlock key="unlocked" className="w-3.5 h-3.5" />}
                         {spoilerLocked ? 'Spoiler Safe' : 'Spoilers On'}
                     </button>
                     {(!book?.google_books_id && !book?.description) && (
