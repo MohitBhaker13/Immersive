@@ -5,8 +5,7 @@ export const SOUND_THEMES = {
     name: 'Horror',
     description: 'Low ambient drones, wind, subtle tension',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/07/Dark-Ambience-1.mp3', name: 'Dark Ambience Loop', duration: 120 },
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/07/Spooky-Ghost-Atmosphere.mp3', name: 'Ghostly Whisper', duration: 180 }
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Gathering%20Darkness.mp3', name: 'Horror Ambience', duration: 240 }
     ],
     color: '#4A4A4A',
     icon: '🌙',
@@ -20,9 +19,9 @@ export const SOUND_THEMES = {
   },
   Fantasy: {
     name: 'Fantasy',
-    description: 'Cinematic ambient, forest ambience, magical tones',
+    description: 'Enchanting melodies, mystical forest, magical vibes',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2020/09/Old-Library-Ambience.mp3', name: 'Ancient Magic', duration: 300 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Spirit%20of%20the%20Girl.mp3', name: 'Mystical Realms', duration: 300 },
     ],
     color: '#6B8E23',
     icon: '🌲',
@@ -36,9 +35,9 @@ export const SOUND_THEMES = {
   },
   Romance: {
     name: 'Romance',
-    description: 'Rainy jazz, warm instrumental, gentle melodies',
+    description: 'Warm instrumental, soft piano, gentle melodies',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/03/Detective-Mystery-Ambient.mp3', name: 'Midnight Jazz', duration: 180 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Heartwarming.mp3', name: 'Tender Moments', duration: 240 },
     ],
     color: '#FF69B4',
     icon: '💕',
@@ -52,9 +51,9 @@ export const SOUND_THEMES = {
   },
   SciFi: {
     name: 'Sci-Fi',
-    description: 'Futuristic ambient, deep drone, electronic textures',
+    description: 'Futuristic ambient, space drone, cosmic textures',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/04/Cyberpunk-City-Neon-Ambience.mp3', name: 'Deep Space Drone', duration: 180 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Deep%20Space.mp3', name: 'Space Odyssey', duration: 360 },
     ],
     color: '#4169E1',
     icon: '🚀',
@@ -70,7 +69,7 @@ export const SOUND_THEMES = {
     name: 'Thriller',
     description: 'Tension building, suspenseful tones, mysterious atmosphere',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/07/Dark-Ambience-1.mp3', name: 'Edge of Suspense', duration: 120 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Echoes%20of%20Time.mp3', name: 'Edge of Suspense', duration: 300 },
     ],
     color: '#8B0000',
     icon: '🔪',
@@ -84,9 +83,9 @@ export const SOUND_THEMES = {
   },
   Cyberpunk: {
     name: 'Cyberpunk',
-    description: 'Neon synths, futuristic hum, rain on chrome',
+    description: 'Neon synths, futuristic hum, electronic textures',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/04/Cyberpunk-City-Neon-Ambience.mp3', name: 'Neon Rain', duration: 180 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Decisions.mp3', name: 'Neon City', duration: 240 },
     ],
     color: '#bc13fe',
     icon: '🌃',
@@ -100,9 +99,9 @@ export const SOUND_THEMES = {
   },
   Library: {
     name: 'Library',
-    description: 'Pages turning, distant clock, soft whispers',
+    description: 'Quiet halls, distant clock, soft whispers',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2020/09/Old-Library-Ambience.mp3', name: 'Ancient Halls', duration: 300 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Pippin%20the%20Hunchback.mp3', name: 'Ancient Halls', duration: 300 },
     ],
     color: '#8B4513',
     icon: '🏛️',
@@ -118,7 +117,7 @@ export const SOUND_THEMES = {
     name: 'Storm',
     description: 'Heavy rain, distant thunder, cozy protection',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2020/06/Rain-and-Thunder.mp3', name: 'Midnight Storm', duration: 240 },
+      { url: 'https://archive.org/download/RainAndThunder/Rain_And_Thunder.mp3', name: 'Midnight Storm', duration: 3600 },
     ],
     color: '#475569',
     icon: '⛈️',
@@ -132,9 +131,9 @@ export const SOUND_THEMES = {
   },
   Mystery: {
     name: 'Mystery',
-    description: 'Foggy noir, rainy jazz, subtle investigations',
+    description: 'Foggy noir, investigation tones, mysterious atmosphere',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/03/Detective-Mystery-Ambient.mp3', name: 'Noir Investigation', duration: 180 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Walking%20the%20Dog.mp3', name: 'Noir Investigation', duration: 240 },
     ],
     color: '#1e293b',
     icon: '🕵️',
@@ -150,9 +149,9 @@ export const SOUND_THEMES = {
   // Moods
   Focus: {
     name: 'Focus',
-    description: 'Brown noise, lo-fi instrumental, concentration aid',
+    description: 'Soft ambient, concentration aid, peaceful vibes',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/05/Lofi-Study-Music.mp3', name: 'Deep Focus Lo-Fi', duration: 210 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Meditation%20Impromptu%2001.mp3', name: 'Deep Focus', duration: 300 },
     ],
     color: '#708090',
     icon: '🎯',
@@ -166,9 +165,9 @@ export const SOUND_THEMES = {
   },
   Calm: {
     name: 'Calm',
-    description: 'Gentle ambient, soft background sounds, peaceful vibes',
+    description: 'Gentle ambient, peaceful vibes, soft atmosphere',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/05/Lofi-Study-Music.mp3', name: 'Peaceful Mind', duration: 210 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Meditation%20Impromptu%2001.mp3', name: 'Peaceful Mind', duration: 300 },
     ],
     color: '#87CEEB',
     icon: '☁️',
@@ -184,7 +183,7 @@ export const SOUND_THEMES = {
     name: 'Cozy',
     description: 'Rain sounds, heavy ambient, warm vibes',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2020/06/Rain-and-Thunder.mp3', name: 'Cozy Rain', duration: 240 },
+      { url: 'https://archive.org/download/RainAndThunder/Rain_And_Thunder.mp3', name: 'Cozy Rain', duration: 3600 },
     ],
     color: '#D2691E',
     icon: '☕',
@@ -200,7 +199,7 @@ export const SOUND_THEMES = {
     name: 'Epic',
     description: 'Deep orchestral tones, grand ambience, heavy strings',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/07/Dark-Ambience-1.mp3', name: 'Epic Journey', duration: 120 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Unseen%20Horrors.mp3', name: 'Epic Journey', duration: 240 },
     ],
     color: '#FFD700',
     icon: '⚔️',
@@ -214,9 +213,9 @@ export const SOUND_THEMES = {
   },
   Study: {
     name: 'Study',
-    description: 'Lo-Fi beats, soft background, productive atmosphere',
+    description: 'Soft ambient, concentration aid, peaceful atmosphere',
     tracks: [
-      { url: 'https://www.chosic.com/wp-content/uploads/2021/05/Lofi-Study-Music.mp3', name: 'Deep Focus', duration: 210 },
+      { url: 'https://incompetech.com/music/royalty-free/mp3-royaltyfree/Meditation%20Impromptu%2001.mp3', name: 'Deep Focus', duration: 300 },
     ],
     color: '#8B4513',
     icon: '📚',
