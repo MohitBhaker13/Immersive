@@ -155,6 +155,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
         } finally {
             setIsStreaming(false);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [book, messages, isStreaming, spoilerLocked]);
 
     const handleSubmit = (e) => {
