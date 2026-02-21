@@ -181,6 +181,7 @@ const Dashboard = ({ user }) => {
         cover_url: selectedSearchBook.cover_url,
         description: selectedSearchBook.description,
         page_count: selectedSearchBook.page_count,
+        google_books_id: selectedSearchBook.id,
         status: 'currently_reading'
       });
       toast.success('Book added to library!');

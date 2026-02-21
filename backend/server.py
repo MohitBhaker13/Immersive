@@ -500,7 +500,13 @@ async def search_books(q: str):
         
     try:
         url = f"https://www.googleapis.com/books/v1/volumes?q={q}&maxResults=10"
+        # Append API key if available for higher rate limits
+        google_books_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '')
+        if google_books_key:
+            url += f"&key={google_books_key}"
         response = requests.get(url, timeout=10)
+        if response.status_code == 429:
+            raise HTTPException(status_code=429, detail="Google Books API rate limit reached. Please wait a moment and try again.")
         response.raise_for_status()
         data = response.json()
         
@@ -1023,7 +1029,7 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
     # --- Guardrail: Unknown book detection + context injection ---
     is_potentially_unknown = (
         not book.get("google_books_id")
-        or not book.get("description")
+        and not book.get("description")
     )
 
     if is_potentially_unknown:
@@ -1070,7 +1076,7 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
     gen_config = {
         "system_instruction": system_prompt,
         "temperature": 0.1,
-        "max_output_tokens": 512,
+        "max_output_tokens": 2048,
         "safety_settings": CHAT_SAFETY_SETTINGS,
     }
     if tools:

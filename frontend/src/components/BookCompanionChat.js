@@ -90,13 +90,16 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullText = '';
+            let sseBuffer = ''; // Buffer for partial SSE lines across TCP chunks
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
+                sseBuffer += decoder.decode(value, { stream: true });
+                const lines = sseBuffer.split('\n');
+                // Keep the last (possibly incomplete) line in the buffer
+                sseBuffer = lines.pop() || '';
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
@@ -223,7 +226,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                         {spoilerLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
                         {spoilerLocked ? 'Spoiler Safe' : 'Spoilers On'}
                     </button>
-                    {(!book?.google_books_id || !book?.description) && (
+                    {(!book?.google_books_id && !book?.description) && (
                         <span className="text-[9px] opacity-50" style={{ color: textColor }}>
                             ⚠️ Limited data for this title
                         </span>
