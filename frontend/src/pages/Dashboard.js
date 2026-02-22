@@ -188,6 +188,7 @@ const Dashboard = ({ user }) => {
       setSearchResults(response.data);
     } catch (error) {
       console.error('Search failed:', error);
+      toast.error(error.response?.data?.detail || 'Search failed. Please check your connection.');
     } finally {
       setIsSearching(false);
     }
