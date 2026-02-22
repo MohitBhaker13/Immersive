@@ -96,7 +96,8 @@ const Dashboard = ({ user }) => {
 
   const handlePreview = async (themeName) => {
     if (isPlayingPreview === themeName) {
-      await audioManager.stop(500);
+      // Instantly silence so the button responds immediately
+      audioManager.stopImmediate();
       setIsPlayingPreview(null);
       return;
     }
@@ -107,13 +108,14 @@ const Dashboard = ({ user }) => {
     const track = getRandomTrack(themeName);
     if (track) {
       setIsPlayingPreview(themeName);
-      await audioManager.play(themeName, track.url, 1500);
+      // Non-blocking — UI responds before audio even starts
+      audioManager.play(themeName, track.url, 800);
 
-      // Auto stop preview after 15 seconds to save bandwidth
+      // Auto stop preview after 15 seconds
       setTimeout(() => {
         setIsPlayingPreview(prev => {
           if (prev === themeName) {
-            audioManager.stop(1000);
+            audioManager.stop(400);
             return null;
           }
           return prev;
@@ -155,7 +157,7 @@ const Dashboard = ({ user }) => {
 
     // Stop preview if playing
     if (isPlayingPreview) {
-      await audioManager.stop(500);
+      audioManager.stopImmediate();
       setIsPlayingPreview(null);
     }
 
@@ -456,7 +458,14 @@ const Dashboard = ({ user }) => {
         </button>
       </div>
 
-      <Dialog open={showNewSession} onOpenChange={setShowNewSession}>
+      <Dialog open={showNewSession} onOpenChange={(open) => {
+        if (!open) {
+          // Stop any preview audio when dialog is dismissed
+          audioManager.stop(300);
+          setIsPlayingPreview(null);
+        }
+        setShowNewSession(open);
+      }}>
         <DialogContent className="bg-white border-[#E8E3D9]">
           <DialogHeader>
             <DialogTitle style={{ fontFamily: 'Playfair Display, serif' }}>Start Reading Session</DialogTitle>

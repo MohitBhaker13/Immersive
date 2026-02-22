@@ -177,20 +177,27 @@ const ImmersiveSession = () => {
   }, []);
 
   const handleThemeChange = useCallback(async (themeName) => {
-    if (themeName === currentTheme) return;
+    if (themeName === currentTheme) {
+      setShowAtmosphereDialog(false);
+      return;
+    }
 
-    // Crossfade: keep old theme visible while new one fades in
+    // Close dialog IMMEDIATELY for instant UI feedback
+    setShowAtmosphereDialog(false);
+
+    // Crossfade background: keep old theme visible while new one fades in
     setPrevTheme(currentTheme);
     setThemeFading(true);
     setCurrentTheme(themeName);
-    // After the CSS transition completes, remove the old layer
     setTimeout(() => {
       setThemeFading(false);
       setPrevTheme(null);
     }, 800);
+
     const track = getRandomTrack(themeName);
     if (track) {
-      await audioManager.play(themeName, track.url, 1500); // Smooth transition
+      // Fire-and-forget: do NOT await so button feels instant
+      audioManager.play(themeName, track.url, 600);
       setSoundEnabled(true);
 
       // Store locally so it survives page refreshes during this session
@@ -203,7 +210,6 @@ const ImmersiveSession = () => {
         });
       }
     }
-    setShowAtmosphereDialog(false);
   }, [currentTheme, book, sessionId]);
 
   const confirmExit = useCallback(async () => {
