@@ -524,14 +524,16 @@ async def search_books(q: str):
         return []
         
     try:
-        url = f"https://www.googleapis.com/books/v1/volumes?q={q}&maxResults=10"
-        # Append API key if available for higher rate limits
+        url = "https://www.googleapis.com/books/v1/volumes"
+        params = {"q": q, "maxResults": 10}
+        # Append API key if available
         google_books_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '')
         if google_books_key:
-            url += f"&key={google_books_key}"
+            params["key"] = google_books_key
+            
         # PERF: async httpx instead of sync requests (no event loop blocking)
         async with httpx.AsyncClient() as http_client:
-            response = await http_client.get(url, timeout=10)
+            response = await http_client.get(url, params=params, timeout=10)
         if response.status_code == 429:
             raise HTTPException(status_code=429, detail="Google Books API rate limit reached. Please wait a moment and try again.")
         response.raise_for_status()
