@@ -12,6 +12,17 @@ from pydantic import BaseModel, ConfigDict
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
+import sys
+import traceback
+
+# --- EMERGENCY STARTUP LOGGING ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+logger.info("🚀 STARTING BACKEND INITIALIZATION...")
 import httpx
 import json
 from google import genai
@@ -40,17 +51,24 @@ except ImportError:
 
 # MongoDB connection - Safe lookup for production deployment
 # Use getenv instead of environ[] to avoid KeyError crashes on startup
-mongo_url = os.getenv('MONGO_URL')
-db_name = os.getenv('DB_NAME', 'immersive')
+mongo_url = os.getenv('MONGO_URL', '').strip().strip("'").strip('"')
+db_name = os.getenv('DB_NAME', 'immersive').strip().strip("'").strip('"')
 
 if not mongo_url:
-    logging.error("❌ CRITICAL: MONGO_URL not found. App will crash on DB access.")
+    logger.error("❌ CRITICAL: MONGO_URL not found or empty.")
     client = None
     db = None
 else:
-    client = AsyncIOMotorClient(mongo_url)
-    db = client[db_name]
-    logging.info(f"✅ Initializing database connection: {db_name}")
+    try:
+        logger.info(f"💾 Connecting to MongoDB: {db_name} (URL length: {len(mongo_url)})")
+        client = AsyncIOMotorClient(mongo_url)
+        db = client[db_name]
+        logger.info("✅ AsyncIOMotorClient created.")
+    except Exception as e:
+        logger.error(f"❌ FAILED TO CREATE MONGO CLIENT: {e}")
+        logger.error(traceback.format_exc())
+        client = None
+        db = None
 
 # Create the main app without a prefix
 app = FastAPI()
