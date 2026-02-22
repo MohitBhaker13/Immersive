@@ -77,6 +77,10 @@ const ImmersiveSession = () => {
     return () => clearTimeout(timer);
   }, [session, timeRemaining, handleComplete]);
 
+  // use a ref to track what theme we've already started playing to avoid redundant calls 
+  // and to avoid putting 'currentTheme' in the dependency array (which causes identity loops)
+  const processedThemeRef = useRef(null);
+
   const loadSession = useCallback(async () => {
     if (hasLoaded.current) return;
     hasLoaded.current = true;
@@ -88,6 +92,7 @@ const ImmersiveSession = () => {
       if (track) {
         audioManager.play(savedTheme, track.url, 2000);
         setCurrentTheme(savedTheme);
+        processedThemeRef.current = savedTheme;
         setSoundEnabled(true);
       }
     }
@@ -123,14 +128,15 @@ const ImmersiveSession = () => {
       // Update theme if it differs from the early-hint or if no hint was available
       const themeToPlay = sessionStorage.getItem(`theme_${sessionId}`) || currentSession.sound_theme;
 
-      if (themeToPlay && SOUND_THEMES[themeToPlay] && themeToPlay !== currentTheme) {
+      if (themeToPlay && SOUND_THEMES[themeToPlay] && themeToPlay !== processedThemeRef.current) {
         setCurrentTheme(themeToPlay);
+        processedThemeRef.current = themeToPlay;
         const track = getRandomTrack(themeToPlay);
         if (track) {
-          await audioManager.play(themeToPlay, track.url, 2000);
+          audioManager.play(themeToPlay, track.url, 2000);
           setSoundEnabled(true);
         }
-      } else if (!themeToPlay && !currentTheme) {
+      } else if (!themeToPlay && !processedThemeRef.current) {
         // Fallback for sessions with no theme specified
         setSoundEnabled(false);
       }
@@ -139,7 +145,7 @@ const ImmersiveSession = () => {
       toast.error('Failed to load session');
       navigate('/dashboard');
     }
-  }, [sessionId, navigate, currentTheme]);
+  }, [sessionId, navigate]);
 
   useEffect(() => {
     loadSession();

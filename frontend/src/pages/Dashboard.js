@@ -459,8 +459,8 @@ const Dashboard = ({ user }) => {
       </div>
 
       <Dialog open={showNewSession} onOpenChange={(open) => {
-        if (!open) {
-          // Stop any preview audio when dialog is dismissed
+        if (!open && isPlayingPreview) {
+          // Stop any preview audio ONLY if a preview was playing
           audioManager.stop(300);
           setIsPlayingPreview(null);
         }
