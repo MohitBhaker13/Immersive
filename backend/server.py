@@ -38,26 +38,43 @@ except ImportError:
     GOOGLE_OAUTH_ENABLED = False
     print("⚠️  Google OAuth not configured. Using Emergent managed auth only.")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# MongoDB connection - Safe lookup for production deployment
+# Use getenv instead of environ[] to avoid KeyError crashes on startup
+mongo_url = os.getenv('MONGO_URL')
+db_name = os.getenv('DB_NAME', 'immersive')
+
+if not mongo_url:
+    logging.error("❌ CRITICAL: MONGO_URL not found. App will crash on DB access.")
+    client = None
+    db = None
+else:
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[db_name]
+    logging.info(f"✅ Initializing database connection: {db_name}")
 
 # Create the main app without a prefix
 app = FastAPI()
 
 @app.on_event("startup")
 async def startup_db_client():
+    if db is None:
+        logging.error("❌ Database initialization skipped (Missing MONGO_URL).")
+        return
+
     from pymongo import ASCENDING, DESCENDING
-    # Create indexes for performance optimization
-    await db.books.create_index([("user_id", ASCENDING)])
-    await db.books.create_index([("user_id", ASCENDING), ("status", ASCENDING)])
-    await db.sessions.create_index([("user_id", ASCENDING), ("started_at", DESCENDING)])
-    await db.streaks.create_index([("user_id", ASCENDING)])
-    await db.notes.create_index([("book_id", ASCENDING), ("created_at", DESCENDING)])
-    # PERF: Critical index — every API request queries user_sessions by token
-    await db.user_sessions.create_index([("session_token", ASCENDING)], unique=True)
-    print("MongoDB indexes verified (including user_sessions.session_token).")
+    try:
+        # Create indexes for performance optimization
+        await db.books.create_index([("user_id", ASCENDING)])
+        await db.books.create_index([("user_id", ASCENDING), ("status", ASCENDING)])
+        await db.sessions.create_index([("user_id", ASCENDING), ("started_at", DESCENDING)])
+        await db.streaks.create_index([("user_id", ASCENDING)])
+        await db.notes.create_index([("book_id", ASCENDING), ("created_at", DESCENDING)])
+        # PERF: Critical index — every API request queries user_sessions by token
+        await db.user_sessions.create_index([("session_token", ASCENDING)], unique=True)
+        logging.info("✅ MongoDB indexes verified successfully.")
+        logging.info("🚀 Production server is ready and listening.")
+    except Exception as e:
+        logging.error(f"❌ Database startup failed: {e}")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
