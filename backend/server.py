@@ -2,15 +2,17 @@ from fastapi import FastAPI, APIRouter, HTTPException, Cookie, Response, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
-import requests
+import httpx
 import json
 from google import genai
 from google.genai import types
@@ -46,7 +48,9 @@ async def startup_db_client():
     await db.sessions.create_index([("user_id", ASCENDING), ("started_at", DESCENDING)])
     await db.streaks.create_index([("user_id", ASCENDING)])
     await db.notes.create_index([("book_id", ASCENDING), ("created_at", DESCENDING)])
-    print("MongoDB indexes verified.")
+    # PERF: Critical index — every API request queries user_sessions by token
+    await db.user_sessions.create_index([("session_token", ASCENDING)], unique=True)
+    print("MongoDB indexes verified (including user_sessions.session_token).")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -176,7 +180,7 @@ class ChatRequest(BaseModel):
 # ==================== AUTH HELPERS ====================
 
 async def get_current_user(request: Request, session_token: Optional[str] = Cookie(None)) -> dict:
-    """Get user from session token (cookie or header)"""
+    """Get user from session token (cookie or header) — single DB query via $lookup."""
     token = session_token
     
     # Fallback to Authorization header
@@ -188,17 +192,31 @@ async def get_current_user(request: Request, session_token: Optional[str] = Cook
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    # Find session in database
-    session_doc = await db.user_sessions.find_one(
-        {"session_token": token},
-        {"_id": 0}
-    )
+    # PERF: Single aggregation query instead of 2 sequential find_one calls
+    pipeline = [
+        {"$match": {"session_token": token}},
+        {"$lookup": {
+            "from": "users",
+            "localField": "user_id",
+            "foreignField": "user_id",
+            "as": "user_data"
+        }},
+        {"$unwind": {"path": "$user_data", "preserveNullAndEmptyArrays": False}},
+        {"$project": {
+            "_id": 0,
+            "expires_at": 1,
+            "user_data": 1
+        }}
+    ]
+    results = await db.user_sessions.aggregate(pipeline).to_list(1)
     
-    if not session_doc:
+    if not results:
         raise HTTPException(status_code=401, detail="Invalid session")
     
+    doc = results[0]
+    
     # Check expiry
-    expires_at = session_doc["expires_at"]
+    expires_at = doc["expires_at"]
     if isinstance(expires_at, str):
         expires_at = datetime.fromisoformat(expires_at)
     if expires_at.tzinfo is None:
@@ -207,14 +225,9 @@ async def get_current_user(request: Request, session_token: Optional[str] = Cook
     if expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Session expired")
     
-    # Get user data
-    user_doc = await db.users.find_one(
-        {"user_id": session_doc["user_id"]},
-        {"_id": 0}
-    )
-    
-    if not user_doc:
-        raise HTTPException(status_code=401, detail="User not found")
+    user_doc = doc["user_data"]
+    # Remove the mongo _id if it leaked through
+    user_doc.pop("_id", None)
     
     return user_doc
 
@@ -326,12 +339,13 @@ async def exchange_session(session_data: SessionData, response: Response):
     This maintains backwards compatibility with Emergent's authentication
     """
     try:
-        # Call Emergent Auth API
-        auth_response = requests.get(
-            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-            headers={"X-Session-ID": session_data.session_id},
-            timeout=10
-        )
+        # Call Emergent Auth API (PERF: async httpx instead of sync requests)
+        async with httpx.AsyncClient() as http_client:
+            auth_response = await http_client.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_data.session_id},
+                timeout=10
+            )
         
         if auth_response.status_code != 200:
             raise HTTPException(status_code=401, detail="Invalid session_id")
@@ -403,7 +417,7 @@ async def exchange_session(session_data: SessionData, response: Response):
         
         return user_doc
         
-    except requests.RequestException as e:
+    except httpx.HTTPError as e:
         raise HTTPException(status_code=500, detail=f"Auth service error: {str(e)}")
 
 @api_router.get("/auth/me")
@@ -515,7 +529,9 @@ async def search_books(q: str):
         google_books_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '')
         if google_books_key:
             url += f"&key={google_books_key}"
-        response = requests.get(url, timeout=10)
+        # PERF: async httpx instead of sync requests (no event loop blocking)
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.get(url, timeout=10)
         if response.status_code == 429:
             raise HTTPException(status_code=429, detail="Google Books API rate limit reached. Please wait a moment and try again.")
         response.raise_for_status()
@@ -525,11 +541,9 @@ async def search_books(q: str):
         for item in data.get("items", []):
             info = item.get("volumeInfo", {})
             
-            # Sanitization logic
+            # Sanitization logic (re is imported at top level)
             description = info.get("description", "")
             if description:
-                # Basic HTML strip
-                import re
                 description = re.sub('<[^<]+?>', '', description)
             
             # Best possible image
@@ -677,65 +691,54 @@ async def complete_session(session_id: str, completion: SessionComplete, request
     if completion.actual_minutes is not None:
         actual_minutes = min(actual_minutes, completion.actual_minutes)
     
-    # Update session
-    await db.sessions.update_one(
-        {"session_id": session_id},
-        {"$set": {
-            "ended_at": ended_at,
-            "actual_minutes": actual_minutes
-        }}
-    )
-    
-    # Update book stats
-    await db.books.update_one(
-        {"book_id": session["book_id"]},
-        {
-            "$inc": {
-                "total_minutes": actual_minutes,
-                "total_sessions": 1
-            },
-            "$set": {"status": "currently_reading"}
-        }
-    )
-    
-    # Update streak
-    today = datetime.now(timezone.utc).date().isoformat()
-    streak = await db.streaks.find_one({"user_id": user["user_id"]}, {"_id": 0})
-    
-    if streak:
-        last_active = streak.get("last_active_date")
-        current_streak = streak.get("current_streak", 0)
-        longest_streak = streak.get("longest_streak", 0)
-        
-        if last_active == today:
-            # Already logged today
-            pass
-        elif last_active:
-            from datetime import date
-            last_date = date.fromisoformat(last_active)
-            today_date = date.fromisoformat(today)
-            days_diff = (today_date - last_date).days
+    # PERF: Run independent writes in parallel with asyncio.gather
+    async def _update_streak():
+        """Update streak — needs its own query first, so runs as coroutine."""
+        today = datetime.now(timezone.utc).date().isoformat()
+        streak = await db.streaks.find_one({"user_id": user["user_id"]}, {"_id": 0})
+        if streak:
+            last_active = streak.get("last_active_date")
+            current_streak = streak.get("current_streak", 0)
+            longest_streak = streak.get("longest_streak", 0)
             
-            if days_diff == 1:
-                # Continue streak
-                current_streak += 1
+            if last_active == today:
+                pass  # Already logged today
+            elif last_active:
+                from datetime import date
+                last_date = date.fromisoformat(last_active)
+                today_date = date.fromisoformat(today)
+                days_diff = (today_date - last_date).days
+                current_streak = current_streak + 1 if days_diff == 1 else 1
             else:
-                # Reset streak
                 current_streak = 1
-        else:
-            # First activity
-            current_streak = 1
-        
-        longest_streak = max(longest_streak, current_streak)
-        
-        await db.streaks.update_one(
-            {"user_id": user["user_id"]},
-            {"$set": {
-                "current_streak": current_streak,
-                "longest_streak": longest_streak,
-                "last_active_date": today
-            }}
-        )
+            
+            longest_streak = max(longest_streak, current_streak)
+            await db.streaks.update_one(
+                {"user_id": user["user_id"]},
+                {"$set": {
+                    "current_streak": current_streak,
+                    "longest_streak": longest_streak,
+                    "last_active_date": today
+                }}
+            )
+    
+    await asyncio.gather(
+        # 1. Update session document
+        db.sessions.update_one(
+            {"session_id": session_id},
+            {"$set": {"ended_at": ended_at, "actual_minutes": actual_minutes}}
+        ),
+        # 2. Update book stats
+        db.books.update_one(
+            {"book_id": session["book_id"]},
+            {
+                "$inc": {"total_minutes": actual_minutes, "total_sessions": 1},
+                "$set": {"status": "currently_reading"}
+            }
+        ),
+        # 3. Update streak (has internal read-then-write)
+        _update_streak()
+    )
     
     return {"message": "Session completed", "minutes": actual_minutes}
 
@@ -912,17 +915,19 @@ def is_post_cutoff_book(book: dict) -> bool:
     except (ValueError, IndexError):
         return False
 
-def fetch_book_context_sync(book: dict) -> str:
+async def fetch_book_context(book: dict) -> str:
     """
     Fetch extended metadata from Google Books API to inject as grounding context.
     Only called for books flagged as potentially unknown.
+    PERF: Now async — no event loop blocking.
     """
     google_id = book.get("google_books_id")
     if not google_id:
         return ""
     try:
         url = f"https://www.googleapis.com/books/v1/volumes/{google_id}"
-        resp = requests.get(url, timeout=10)
+        async with httpx.AsyncClient() as http_client:
+            resp = await http_client.get(url, timeout=10)
         if resp.status_code != 200:
             return ""
         data = resp.json()
@@ -1076,7 +1081,7 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
             'and recommend the user verify details in their copy.'
         )
         # Long Context Injection — fetch rich metadata from Google Books
-        extra_context = fetch_book_context_sync(book)
+        extra_context = await fetch_book_context(book)
         if extra_context:
             system_prompt += (
                 f'\n\nVERIFIED BOOK DATA (from Google Books — use this as ground truth):\n'
@@ -1156,6 +1161,9 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
 
 # Include the router in the main app
 app.include_router(api_router)
+
+# PERF: GZip compression — reduces payload size for JSON responses
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 app.add_middleware(
     CORSMiddleware,

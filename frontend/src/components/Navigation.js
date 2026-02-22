@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Calendar as CalendarIcon, Library as LibraryIcon, LogOut } from 'lucide-react';
 import api from '@/lib/api';
+import { clearAuthCache } from '@/components/ProtectedRoute';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -18,10 +19,12 @@ const Navigation = ({ currentPage = 'dashboard' }) => {
   const handleLogout = async () => {
     try {
       await api.post('/auth/logout');
+      clearAuthCache();
       toast.success('Logged out successfully');
       navigate('/login');
     } catch (error) {
       console.error('Logout error:', error);
+      clearAuthCache();
       navigate('/login');
     }
   };

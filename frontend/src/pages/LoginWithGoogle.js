@@ -129,8 +129,8 @@ const LoginWithGoogle = () => {
     <div className="min-h-screen relative overflow-hidden bg-[#F8F6F1] flex flex-col items-center justify-center p-4 md:p-6">
       {/* Background Ambience */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#A68A64] opacity-5 rounded-full blur-3xl transform transition-transform duration-[20s] ease-in-out ${mounted ? 'translate-x-10 translate-y-10 scale-110' : ''}`} />
-        <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#2C2A27] opacity-5 rounded-full blur-3xl transform transition-transform duration-[25s] ease-in-out ${mounted ? '-translate-x-10 -translate-y-10 scale-105' : ''}`} />
+        <div className={`absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#A68A64] opacity-5 rounded-full blur-3xl transform transition-transform duration-[20000ms] ease-in-out ${mounted ? 'translate-x-10 translate-y-10 scale-110' : ''}`} />
+        <div className={`absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#2C2A27] opacity-5 rounded-full blur-3xl transform transition-transform duration-[25000ms] ease-in-out ${mounted ? '-translate-x-10 -translate-y-10 scale-105' : ''}`} />
       </div>
 
       <div className="w-full max-w-md relative z-10 flex flex-col gap-6">
