@@ -526,10 +526,13 @@ async def search_books(q: str):
     try:
         url = "https://www.googleapis.com/books/v1/volumes"
         params = {"q": q, "maxResults": 10}
+        
         # Append API key if available
         google_books_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '')
         if google_books_key:
             params["key"] = google_books_key
+        else:
+            logging.warning("Google Books API key MISSING from environment. Search might be rate-limited.")
             
         # PERF: async httpx instead of sync requests (no event loop blocking)
         async with httpx.AsyncClient() as http_client:
@@ -928,8 +931,13 @@ async def fetch_book_context(book: dict) -> str:
         return ""
     try:
         url = f"https://www.googleapis.com/books/v1/volumes/{google_id}"
+        params = {}
+        google_books_key = os.environ.get('GOOGLE_BOOKS_API_KEY', '')
+        if google_books_key:
+            params["key"] = google_books_key
+            
         async with httpx.AsyncClient() as http_client:
-            resp = await http_client.get(url, timeout=10)
+            resp = await http_client.get(url, params=params, timeout=10)
         if resp.status_code != 200:
             return ""
         data = resp.json()
