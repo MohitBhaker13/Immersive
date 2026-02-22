@@ -535,10 +535,26 @@ async def search_books(q: str):
             logging.warning("Google Books API key MISSING from environment. Search might be rate-limited.")
             
         # PERF: async httpx instead of sync requests (no event loop blocking)
-        async with httpx.AsyncClient() as http_client:
+        headers = {"User-Agent": "ImmersiveReadingApp/1.0"}
+        async with httpx.AsyncClient(headers=headers) as http_client:
             response = await http_client.get(url, params=params, timeout=10)
+        
         if response.status_code == 429:
-            raise HTTPException(status_code=429, detail="Google Books API rate limit reached. Please wait a moment and try again.")
+            # Provide a fallback mock response so the UI doesn't break if API key is missing
+            logging.error("Google Books API 429 Rate Limit. Returning fallback data.")
+            return [
+                {
+                    "id": "mock-1",
+                    "title": q.title() + " (External Search Unavailable)",
+                    "authors": ["Unknown Author"],
+                    "description": "The Google Books API is currently rate-limited or missing an API key. You can still add this book manually, but detailed metadata is unavailable.",
+                    "cover_url": "",
+                    "page_count": 300,
+                    "categories": ["General"],
+                    "published_date": "2024"
+                }
+            ]
+            
         response.raise_for_status()
         data = response.json()
         
