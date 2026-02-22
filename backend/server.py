@@ -1237,6 +1237,7 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
             
             for attempt in range(max_retries + 1):
                 try:
+                    logger.info(f"🤖 Chat: Requesting model 'gemini-2.5-flash' (Google Search: {bool(tools)})")
                     response = gemini_client.models.generate_content_stream(
                         model="gemini-2.5-flash", 
                         contents=prompt_history,
@@ -1283,7 +1284,8 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
             elif '403' in error_msg or 'PERMISSION_DENIED' in error_msg:
                 friendly = "The AI key doesn't have permission. Please check your Gemini API key."
             elif '400' in error_msg or 'INVALID_ARGUMENT' in error_msg:
-                friendly = "Something went wrong with the request. Please try a different question."
+                logger.error(f"❌ Gemini 400 Error details: {error_msg}")
+                friendly = f"Something went wrong with the request ({error_msg[:100]}). Please try a different question."
             else:
                 friendly = f"Something went wrong: {error_msg[:150]}"
             yield f"data: {json.dumps({'error': friendly})}\n\n"
