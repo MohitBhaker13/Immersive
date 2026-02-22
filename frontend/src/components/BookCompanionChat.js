@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Send, BookOpen, Sparkles, Lock, Unlock, Info, RefreshCw } from 'lucide-react';
+import { X, Send, BookOpen, Sparkles, Lock, Unlock, Info, RefreshCw, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { SOUND_THEMES } from '@/utils/constants';
 
 const QUICK_PROMPTS = [
@@ -146,18 +146,25 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                     if (line.startsWith('data: ')) {
                         try {
                             const data = JSON.parse(line.slice(6));
+                            if (data.trace_id) {
+                                setMessages(prev => {
+                                    const updated = [...prev];
+                                    updated[assistantMsgIndex] = { ...updated[assistantMsgIndex], trace_id: data.trace_id };
+                                    return updated;
+                                });
+                            }
                             if (data.text) {
                                 fullText += data.text;
                                 setMessages(prev => {
                                     const updated = [...prev];
-                                    updated[assistantMsgIndex] = { role: 'assistant', content: fullText, streaming: true };
+                                    updated[assistantMsgIndex] = { ...updated[assistantMsgIndex], content: fullText, streaming: true };
                                     return updated;
                                 });
                             }
                             if (data.done) {
                                 setMessages(prev => {
                                     const updated = [...prev];
-                                    updated[assistantMsgIndex] = { role: 'assistant', content: fullText, streaming: false };
+                                    updated[assistantMsgIndex] = { ...updated[assistantMsgIndex], content: fullText, streaming: false };
                                     return updated;
                                 });
                             }
@@ -207,6 +214,40 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
         setTimeout(() => sendMessage(userMsg.content), 100);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages, sendMessage]);
+
+    // Score handler — sends thumbs up/down to Langfuse
+    const handleScore = async (msgIndex, traceId, scoreValue) => {
+        if (!traceId) return;
+
+        // Optimistically update UI to show disabled state immediately
+        setMessages(prev => {
+            const updated = [...prev];
+            updated[msgIndex] = { ...updated[msgIndex], userScore: scoreValue };
+            return updated;
+        });
+
+        try {
+            const token = localStorage.getItem('session_token');
+            const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/chat/score`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                },
+                credentials: 'include',
+                body: JSON.stringify({ trace_id: traceId, score: scoreValue }),
+            });
+            if (!res.ok) throw new Error('Score submission failed');
+        } catch (error) {
+            console.error('Failed to submit score:', error);
+            // Revert UI if it fails
+            setMessages(prev => {
+                const updated = [...prev];
+                delete updated[msgIndex].userScore;
+                return updated;
+            });
+        }
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -302,7 +343,7 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                                         />
                                     </div>
                                     <span className="text-[10px] font-medium whitespace-nowrap" style={{ color: usage.remaining <= 3 ? '#ef4444' : textColor }}>
-                                        {usage.remaining}/{usage.limit}
+                                        {usage.remaining} available
                                     </span>
                                 </div>
                                 <div className="text-[10px] opacity-50 mt-1">
@@ -406,18 +447,53 @@ const BookCompanionChat = ({ book, currentTheme, open, onClose }) => {
                                     <span className="inline-block w-1 h-4 ml-0.5 animate-pulse" style={{ backgroundColor: accent }} />
                                 )}
                             </div>
-                            {/* Retry button — shown on completed assistant messages */}
-                            {msg.role === 'assistant' && !msg.streaming && msg.content && (
-                                <button
-                                    onClick={() => retryMessage(i)}
-                                    disabled={isStreaming}
-                                    className="flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] opacity-40 hover:opacity-80 transition-opacity disabled:opacity-20"
-                                    style={{ color: textColor }}
-                                    title="Regenerate this response"
-                                >
-                                    <RefreshCw className="w-3 h-3" />
-                                    Retry
-                                </button>
+                            {/* Action buttons — shown on completed assistant messages */}
+                            {msg.role === 'assistant' && !msg.streaming && msg.content && !msg.error && (
+                                <div className="flex items-center gap-2 mt-1 px-2">
+                                    <button
+                                        onClick={() => retryMessage(i)}
+                                        disabled={isStreaming}
+                                        className="flex items-center gap-1 py-1 px-2 rounded-full text-[10px] opacity-40 hover:opacity-80 transition-opacity disabled:opacity-20 translate-y-[2px]"
+                                        style={{ color: textColor }}
+                                        title="Regenerate this response"
+                                    >
+                                        <RefreshCw className="w-[11px] h-[11px]" />
+                                        Retry
+                                    </button>
+
+                                    {msg.trace_id && (
+                                        <div className="flex items-center gap-1 ml-1 border-l pl-3" style={{ borderColor: accent + '20' }}>
+                                            <button
+                                                onClick={() => handleScore(i, msg.trace_id, 1)}
+                                                disabled={isStreaming || msg.userScore !== undefined}
+                                                className={`p-1.5 rounded-full transition-all flex items-center justify-center ${msg.userScore === 1
+                                                    ? 'opacity-100 scale-110 bg-green-500/10'
+                                                    : msg.userScore !== undefined
+                                                        ? 'opacity-20'
+                                                        : 'opacity-40 hover:opacity-80 hover:bg-green-500/5'
+                                                    }`}
+                                                style={{ color: msg.userScore === 1 ? '#22c55e' : textColor }}
+                                                title="Helpful response"
+                                            >
+                                                <ThumbsUp className={`w-3 h-3 ${msg.userScore === 1 ? 'fill-current' : ''}`} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleScore(i, msg.trace_id, 0)}
+                                                disabled={isStreaming || msg.userScore !== undefined}
+                                                className={`p-1.5 rounded-full transition-all flex items-center justify-center ${msg.userScore === 0
+                                                    ? 'opacity-100 scale-110 bg-red-500/10'
+                                                    : msg.userScore !== undefined
+                                                        ? 'opacity-20'
+                                                        : 'opacity-40 hover:opacity-80 hover:bg-red-500/5'
+                                                    }`}
+                                                style={{ color: msg.userScore === 0 ? '#ef4444' : textColor }}
+                                                title="Not helpful"
+                                            >
+                                                <ThumbsDown className={`w-3 h-3 ${msg.userScore === 0 ? 'fill-current' : ''}`} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             )}
                         </div>
                     ))}

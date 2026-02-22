@@ -1,15 +1,15 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Cookie, Response, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Header, APIRouter, Cookie, Response, Request
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import asyncio
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from pydantic import BaseModel, ConfigDict
+from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import httpx
@@ -19,9 +19,16 @@ from google.genai import types
 from collections import defaultdict
 import time
 import re
+from langfuse import observe, get_client, Langfuse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+# Langfuse v3 - Disable media upload to prevent terminal warnings
+os.environ["LANGFUSE_S3_MEDIA_UPLOAD_ENABLED"] = "false"
+os.environ["LANGFUSE_MEDIA_ENABLED"] = "false"
+os.environ["LANGFUSE_OBSERVE_DECORATOR_IO_CAPTURE_ENABLED"] = "true"
+# Explicitly disable media capture globally for the client
+os.environ["LANGFUSE_MEDIA_UPLOAD_ENABLED"] = "false"
 
 # Import Google OAuth handler
 try:
@@ -176,6 +183,10 @@ class ChatRequest(BaseModel):
     question: str
     history: List[ChatMessage] = []
     spoiler_unlocked: bool = False  # Sent from frontend spoiler lock toggle
+
+class ScoreRequest(BaseModel):
+    trace_id: str
+    score: int # 1 for up, 0 for down
 
 # ==================== AUTH HELPERS ====================
 
@@ -899,15 +910,20 @@ async def get_calendar(request: Request, session_token: Optional[str] = Cookie(N
 
 # ==================== CHAT / BOOK COMPANION ROUTES ====================
 
-# Initialize Gemini client
-gemini_api_key = os.environ.get('GEMINI_API_KEY', '')
-gemini_client = genai.Client(api_key=gemini_api_key) if gemini_api_key and gemini_api_key != 'your-gemini-api-key-here' else None
+# Helper to get/init Gemini client
+def get_gemini_client():
+    key = os.environ.get('GEMINI_API_KEY', '')
+    if not key or key == 'your-gemini-api-key-here':
+        return None
+    return genai.Client(api_key=key)
+
+gemini_client = get_gemini_client()
 
 # --- Chat Guardrails ---
 
 # Per-user rate limiting (in-memory)
 _chat_rate_limit = defaultdict(list)  # user_id -> [timestamps]
-CHAT_RATE_LIMIT = 20       # max requests
+CHAT_RATE_LIMIT = 45       # max requests (approx 9 RPM, well under Gemini's 15 RPM)
 CHAT_RATE_WINDOW = 300     # per 5 minutes
 MAX_HISTORY = 20           # cap conversation history
 MAX_QUESTION_LENGTH = 500  # max user input length
@@ -936,6 +952,7 @@ def is_post_cutoff_book(book: dict) -> bool:
     except (ValueError, IndexError):
         return False
 
+@observe()
 async def fetch_book_context(book: dict) -> str:
     """
     Fetch extended metadata from Google Books API to inject as grounding context.
@@ -1017,10 +1034,22 @@ async def get_chat_usage(request: Request, session_token: Optional[str] = Cookie
     }
 
 @api_router.post("/chat")
+@observe(capture_output=False)
 async def chat_with_book(chat_req: ChatRequest, request: Request, session_token: Optional[str] = Cookie(None)):
     """AI-powered book companion chat — streams responses via SSE"""
     user = await get_current_user(request, session_token)
-
+    uid = user["user_id"]
+    
+    # Attach metadata to the Langfuse trace (SDK v3)
+    langfuse_client = get_client()
+    
+    # Extract trace ID synchronously before async generator context is lost in streaming response
+    active_trace_id = langfuse_client.get_current_trace_id() if langfuse_client else None
+    
+    # Ensure client is fresh (picks up .env changes)
+    global gemini_client
+    gemini_client = get_gemini_client()
+    
     if not gemini_client:
         raise HTTPException(status_code=503, detail="AI chat not configured. Please set GEMINI_API_KEY in .env")
 
@@ -1028,6 +1057,16 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
     check_chat_rate_limit(user["user_id"])
 
     # --- Guardrail: Input sanitization ---
+    # Attach metadata to the Langfuse trace (SDK v3)
+    langfuse_client = get_client()
+    if langfuse_client:
+        langfuse_client.update_current_trace(
+            name="Chat with Book",
+            session_id=chat_req.book_id,
+            user_id=user["user_id"],
+            tags=["book_companion"]
+        )
+
     question = chat_req.question.strip()[:MAX_QUESTION_LENGTH]
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
@@ -1150,23 +1189,62 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
     if tools:
         gen_config["tools"] = tools
 
-    async def generate_stream():
+    @observe(as_type="generation")
+    async def generate_stream(prompt_history):
         try:
-            response = gemini_client.models.generate_content_stream(
-                model="gemini-2.5-flash",
-                contents=contents,
-                config=gen_config,
-            )
+            # Yield the trace ID that was extracted synchronously
+            if active_trace_id:
+                yield f"data: {json.dumps({'trace_id': active_trace_id})}\n\n"
+
+            # Retry logic for 429s (Gemini Free Tier constraint)
+            max_retries = 2
+            backoff_delay = 3 # seconds
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    response = gemini_client.models.generate_content_stream(
+                        model="gemini-2.5-flash", 
+                        contents=prompt_history,
+                        config=gen_config,
+                    )
+                    break # Success!
+                except Exception as e:
+                    if ('429' in str(e) or 'RESOURCE_EXHAUSTED' in str(e)) and attempt < max_retries:
+                        logging.warning(f"Gemini Rate Limit hit. Retrying in {backoff_delay}s... (Attempt {attempt+1})")
+                        await asyncio.sleep(backoff_delay)
+                        continue
+                    raise e # Re-raise if not 429 or out of retries
+            usage_metadata = None
             for chunk in response:
                 if chunk.text:
                     yield f"data: {json.dumps({'text': chunk.text})}\n\n"
+                if chunk.usage_metadata:
+                    usage_metadata = chunk.usage_metadata
+            
+            # Finalize Langfuse generation with token counts
+            if usage_metadata and langfuse_client:
+                langfuse_client.update_current_generation(
+                    usage_details={
+                        "input": usage_metadata.prompt_token_count,
+                        "output": usage_metadata.candidates_token_count,
+                        "total": usage_metadata.total_token_count
+                    },
+                    model="gemini-2.5-flash" # Standard name for Langfuse cost lookup
+                )
+            
             yield f"data: {json.dumps({'done': True})}\n\n"
+            
+            # Ensure the trace is sent immediately
+            if langfuse_client:
+                langfuse_client.flush()
         except Exception as e:
             error_msg = str(e)
             logging.error(f"Gemini API error: {error_msg}")
             # Give user-friendly error messages
             if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg:
                 friendly = "The AI is taking a short break (rate limit reached). Please wait a moment and try again."
+                # We no longer force-deplete the internal limit here, as it can cause "lockout traps"
+                # when the user fixes the key/quota.
             elif '403' in error_msg or 'PERMISSION_DENIED' in error_msg:
                 friendly = "The AI key doesn't have permission. Please check your Gemini API key."
             elif '400' in error_msg or 'INVALID_ARGUMENT' in error_msg:
@@ -1176,7 +1254,7 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
             yield f"data: {json.dumps({'error': friendly})}\n\n"
 
     return StreamingResponse(
-        generate_stream(),
+        generate_stream(contents),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1184,6 +1262,28 @@ async def chat_with_book(chat_req: ChatRequest, request: Request, session_token:
             "X-Accel-Buffering": "no",
         }
     )
+
+@api_router.post("/chat/score")
+async def score_chat(score_req: ScoreRequest, request: Request, session_token: Optional[str] = Cookie(None)):
+    """Accepts thumbs up/down rating and sends it to Langfuse"""
+    user = await get_current_user(request, session_token)
+    
+    langfuse_client = get_client()
+    if not langfuse_client:
+        return {"status": "skipped", "reason": "Langfuse not configured"}
+        
+    try:
+        langfuse_client.create_score(
+            trace_id=score_req.trace_id,
+            name="user_feedback",
+            value=score_req.score,
+            comment="Thumbs Up" if score_req.score == 1 else "Thumbs Down"
+        )
+        langfuse_client.flush()
+        return {"status": "success"}
+    except Exception as e:
+        logging.error(f"Failed to submit Langfuse score: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save score")
 
 # Include the router in the main app
 app.include_router(api_router)
