@@ -66,7 +66,7 @@ const ProtectedRoute = ({ children }) => {
     };
 
     checkAuth();
-  }, [navigate, location.state]);
+  }, [navigate, location.state, user, isAuthenticated]);
 
   // Loading state
   if (isAuthenticated === null) {
