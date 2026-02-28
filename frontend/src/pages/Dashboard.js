@@ -29,6 +29,7 @@ const Dashboard = ({ user }) => {
   const [sessions, setSessions] = useState([]);
   const [streak, setStreak] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [showNewSession, setShowNewSession] = useState(false);
   const [showNewBook, setShowNewBook] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
@@ -126,6 +127,7 @@ const Dashboard = ({ user }) => {
 
   const loadDashboardData = async () => {
     try {
+      setLoadError(null);
       const [booksRes, sessionsRes, streakRes] = await Promise.all([
         api.get('/books'),
         api.get('/sessions'),
@@ -136,6 +138,15 @@ const Dashboard = ({ user }) => {
       setStreak(streakRes.data);
     } catch (error) {
       console.error('Failed to load dashboard:', error);
+      const isTimeout = error.code === 'ECONNABORTED';
+      const isNetwork = error.message === 'Network Error';
+      if (isTimeout) {
+        setLoadError('The server is waking up — this can take up to 60 seconds on the free tier. Please try again.');
+      } else if (isNetwork) {
+        setLoadError('Could not reach the server. Please check your connection or try again in a moment.');
+      } else {
+        setLoadError('Failed to load data. Please try again.');
+      }
       toast.error('Failed to load data');
     } finally {
       setLoading(false);
@@ -251,6 +262,24 @@ const Dashboard = ({ user }) => {
       return sessionDate === dateStr;
     });
   };
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#F8F6F1]">
+        <Navigation currentPage="dashboard" />
+        <div className="max-w-[720px] mx-auto px-4 md:px-8 py-6 md:py-12">
+          <div className="card-paper p-8 md:p-12 text-center">
+            <div className="text-4xl mb-4">📖</div>
+            <h2 className="text-xl font-bold text-[#2C2A27] mb-2" style={{ fontFamily: 'Playfair Display, serif' }}>Couldn't load your library</h2>
+            <p className="text-[#6A645C] text-sm mb-6" style={{ fontFamily: 'Lora, serif' }}>{loadError}</p>
+            <button onClick={() => { setLoading(true); setLoadError(null); loadDashboardData(); }} className="btn-paper-accent py-2.5 px-6">
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

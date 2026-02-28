@@ -810,7 +810,7 @@ async def complete_session(session_id: str, completion: SessionComplete, request
     return {"message": "Session completed", "minutes": actual_minutes}
 
 @api_router.get("/sessions", response_model=List[Session])
-async def get_sessions(request: Request, session_token: Optional[str] = Cookie(None), book_id: Optional[str] = None):
+async def get_sessions(request: Request, session_token: Optional[str] = Cookie(None), book_id: Optional[str] = None, limit: int = 50):
     """Get sessions for current user"""
     user = await get_current_user(request, session_token)
     
@@ -818,7 +818,7 @@ async def get_sessions(request: Request, session_token: Optional[str] = Cookie(N
     if book_id:
         query["book_id"] = book_id
     
-    sessions = await db.sessions.find(query, {"_id": 0}).sort("started_at", -1).to_list(1000)
+    sessions = await db.sessions.find(query, {"_id": 0}).sort("started_at", -1).to_list(min(limit, 1000))
     
     for session in sessions:
         if isinstance(session.get("started_at"), str):
@@ -947,7 +947,7 @@ async def get_calendar(request: Request, session_token: Optional[str] = Cookie(N
 
 # Helper to get/init Gemini client
 def get_gemini_client():
-    key = os.environ.get('GEMINI_API_KEY', '')
+    key = os.environ.get('GEMINI_API_KEY', '').strip().strip("'").strip('"')
     if not key or key == 'your-gemini-api-key-here':
         return None
     return genai.Client(api_key=key)
@@ -1328,10 +1328,17 @@ app.include_router(api_router)
 # PERF: GZip compression — reduces payload size for JSON responses
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+# Parse CORS origins — strip whitespace/quotes and filter empty entries
+_raw_origins = os.environ.get('CORS_ORIGINS', '*')
+_cors_origins = [o.strip().strip("'").strip('"') for o in _raw_origins.split(',') if o.strip()]
+if not _cors_origins:
+    _cors_origins = ["*"]
+logger.info(f"🌐 CORS origins: {_cors_origins}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
